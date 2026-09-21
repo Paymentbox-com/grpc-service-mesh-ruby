@@ -1,0 +1,11 @@
+// The message from examples/pbx/api_key.proto in grpc-service-mesh-api. The
+// service is left out; pbx_grpcmesh.rb beside this file is the hand-written
+// reference for what the generator emits from it.
+syntax = "proto3";
+
+package pbx;
+
+message ApiKey {
+  optional string first_name = 1;
+  optional string last_name = 2;
+}

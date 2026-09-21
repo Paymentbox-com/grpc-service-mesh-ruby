@@ -1,0 +1,52 @@
+# frozen_string_literal: true
+
+require "service_mesh"
+
+require_relative "grpc_service_mesh/version"
+require_relative "grpc_service_mesh/errors"
+require_relative "grpc_service_mesh/wire"
+require_relative "grpc_service_mesh/mesh_error"
+require_relative "grpc_service_mesh/transport_router"
+require_relative "grpc_service_mesh/registry"
+require_relative "grpc_service_mesh/rpc"
+require_relative "grpc_service_mesh/rpc_service"
+require_relative "grpc_service_mesh/rpc_client"
+require_relative "grpc_service_mesh/rpc_runtime"
+
+# Ruby library for the gRPC Service Mesh API. Generated code declares rpcs on
+# RPCService and RPCClient subclasses; the application configures the process
+# TransportRouter, registers its services, and starts an RPCRuntime.
+module GrpcServiceMesh
+  @lock = Mutex.new
+
+  class << self
+    # The process TransportRouter.
+    def transport_router
+      @lock.synchronize { @transport_router ||= TransportRouter.new }
+    end
+
+    # The process Registry.
+    def registry
+      @lock.synchronize { @registry ||= Registry.new }
+    end
+
+    # Shortcut for transport_router.add.
+    def add_transport(name, config:, service_map:, runtime:, client:)
+      transport_router.add(name, config: config, service_map: service_map, runtime: runtime, client: client)
+    end
+
+    # Shortcut for registry.register.
+    def register(service)
+      registry.register(service)
+    end
+
+    # Test support: replaces the process router and registry with empty ones.
+    def reset!
+      @lock.synchronize do
+        @transport_router = TransportRouter.new
+        @registry = Registry.new
+      end
+      nil
+    end
+  end
+end
