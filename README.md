@@ -94,7 +94,7 @@ class ApiKeys < Pbx::ApiKeyService
 
   def search(request, metadata)
     key = @store.find(request.first_name) or
-      raise GrpcServiceMesh::MeshError.new(:NOT_FOUND, "no key for #{request.first_name}",
+      raise GrpcServiceMesh::NotFoundError.new("no key for #{request.first_name}",
         Google::Rpc::ErrorInfo.new(reason: "KEY_MISSING", domain: "pbx", metadata: {"request_id" => metadata["Request-Id"].to_s}))
     Pbx::ApiKey.new(first_name: key.first_name, last_name: key.last_name)
   end
@@ -151,10 +151,11 @@ begin
   key = Pbx::ApiKeyClient.search(Pbx::ApiKey.new(first_name: "ada"),
     metadata: {"Request-Id" => SecureRandom.uuid},
     options: {"request_timeout" => "2"})
-rescue GrpcServiceMesh::MeshError => e
-  e.code                   # :NOT_FOUND
+rescue GrpcServiceMesh::NotFoundError => e
   e.message                # "no key for ada"
   info = e.details.find { |d| d.is(Google::Rpc::ErrorInfo) }&.unpack(Google::Rpc::ErrorInfo)
+rescue GrpcServiceMesh::MeshError => e
+  e.code                   # any other Google::Rpc::Code name
 rescue NATS::Timeout, NATS::IO::NoRespondersError
   # transport errors pass through unchanged
 end
@@ -179,6 +180,17 @@ before anything is sent.
 | `#message` | the text, also what `to_s` returns |
 | `#details` | an Array of `Google::Protobuf::Any`; unpack with `any.unpack(klass)`, test with `any.is(klass)` |
 | `#proto` | the `Google::Rpc::Status` |
+
+`MeshError` has one subclass per `Google::Rpc::Code` other than `OK`:
+`NotFoundError`, `InvalidArgumentError`, `PermissionDeniedError`,
+`UnauthenticatedError`, `FailedPreconditionError`, `InternalError`,
+`UnavailableError`, and the rest, each named after its code. A subclass is
+built from a message and details, `GrpcServiceMesh::NotFoundError.new("no
+such key", info)`, and fixes its own code. `MeshError.new` and
+`MeshError.from_proto` return the subclass for the code they are given, so an
+error decoded off the wire is rescued by its class. A code with no name stays
+a plain `MeshError`, and `rescue GrpcServiceMesh::MeshError` catches every
+code.
 
 A name that is not a `Google::Rpc::Code` raises `ArgumentError`.
 

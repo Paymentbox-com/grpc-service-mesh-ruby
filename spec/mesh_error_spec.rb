@@ -12,6 +12,55 @@ RSpec.describe GrpcServiceMesh::MeshError do
     expect(error.proto).to eq(Google::Rpc::Status.new(code: 5, message: "no such key"))
   end
 
+  it "builds the subclass for a named code" do
+    error = described_class.new(:NOT_FOUND, "no such key")
+
+    expect(error).to be_an_instance_of(GrpcServiceMesh::NotFoundError)
+    expect(error.code).to eq(:NOT_FOUND)
+  end
+
+  it "builds the subclass from a proto" do
+    error = described_class.from_proto(Google::Rpc::Status.new(code: 7, message: "nope"))
+
+    expect(error).to be_an_instance_of(GrpcServiceMesh::PermissionDeniedError)
+    expect(error.message).to eq("nope")
+  end
+
+  it "stays a MeshError for OK and for a number with no name" do
+    expect(described_class.new(0, "fine")).to be_an_instance_of(described_class)
+    expect(described_class.new(99, "vendor code")).to be_an_instance_of(described_class)
+  end
+
+  it "builds a subclass directly from a message and details" do
+    info = Google::Rpc::ErrorInfo.new(reason: "KEY_MISSING")
+
+    error = GrpcServiceMesh::NotFoundError.new("no such key", info)
+
+    expect(error).to be_a(described_class)
+    expect(error.code).to eq(:NOT_FOUND)
+    expect(error.message).to eq("no such key")
+    expect(error.details[0].unpack(Google::Rpc::ErrorInfo)).to eq(info)
+  end
+
+  it "gives every subclass its own code" do
+    expect(GrpcServiceMesh::CancelledError.new("").code).to eq(:CANCELLED)
+    expect(GrpcServiceMesh::UnknownError.new("").code).to eq(:UNKNOWN)
+    expect(GrpcServiceMesh::InvalidArgumentError.new("").code).to eq(:INVALID_ARGUMENT)
+    expect(GrpcServiceMesh::DeadlineExceededError.new("").code).to eq(:DEADLINE_EXCEEDED)
+    expect(GrpcServiceMesh::NotFoundError.new("").code).to eq(:NOT_FOUND)
+    expect(GrpcServiceMesh::AlreadyExistsError.new("").code).to eq(:ALREADY_EXISTS)
+    expect(GrpcServiceMesh::PermissionDeniedError.new("").code).to eq(:PERMISSION_DENIED)
+    expect(GrpcServiceMesh::UnauthenticatedError.new("").code).to eq(:UNAUTHENTICATED)
+    expect(GrpcServiceMesh::ResourceExhaustedError.new("").code).to eq(:RESOURCE_EXHAUSTED)
+    expect(GrpcServiceMesh::FailedPreconditionError.new("").code).to eq(:FAILED_PRECONDITION)
+    expect(GrpcServiceMesh::AbortedError.new("").code).to eq(:ABORTED)
+    expect(GrpcServiceMesh::OutOfRangeError.new("").code).to eq(:OUT_OF_RANGE)
+    expect(GrpcServiceMesh::UnimplementedError.new("").code).to eq(:UNIMPLEMENTED)
+    expect(GrpcServiceMesh::InternalError.new("").code).to eq(:INTERNAL)
+    expect(GrpcServiceMesh::UnavailableError.new("").code).to eq(:UNAVAILABLE)
+    expect(GrpcServiceMesh::DataLossError.new("").code).to eq(:DATA_LOSS)
+  end
+
   it "accepts the code as a number" do
     error = described_class.new(5, "no such key")
 
