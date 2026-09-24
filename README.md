@@ -123,7 +123,7 @@ metadata `deployment_group` matches, fetches the transport entry from the
 router, and calls the entry's `runtime` lambda with the entry's client, the
 entry's configuration merged with `"deployment_group"`, and those bindings.
 Services registered after construction are not served by it. The transport's
-`Runtime` binds on the client it is given, so the client generated code
+`Runtime` is built from the client it is given, so the client generated code
 resolves through the router is the runtime's connection.
 
 ```ruby
@@ -373,7 +373,7 @@ just test
 ```
 
 The specs run against an in-process transport in `spec/support/memory_transport.rb`
-whose client records what it was given, whose runtime binds on the client's
+whose client records what it was given, whose runtime subscribes on the client's
 bus and closes the client on stop, and which raises
 `ServiceMesh::KindMismatch` on kind misuse. `spec/support/testproto/` holds the
 `pbx.ApiKey` message, its protoc output, and the reference generated files
