@@ -22,22 +22,6 @@ RSpec.describe GrpcServiceMesh::RpcDSL do
       Class.new(GrpcServiceMesh::RPCService) do
         rpc :search, target: Pbx::ApiKeyTargets::SEARCH, input: Pbx::ApiKey, output: Pbx::ApiKey, kind: :topic
       end
-    }.to raise_error(ArgumentError, /kind topic does not match target kind route/)
-  end
-
-  it "rejects a kind outside route and topic" do
-    expect {
-      Class.new(GrpcServiceMesh::RPCClient) do
-        rpc :search, target: Pbx::ApiKeyTargets::SEARCH, input: Pbx::ApiKey, output: Pbx::ApiKey, kind: :stream
-      end
-    }.to raise_error(ArgumentError, /:stream/)
-  end
-
-  it "rejects a route without an output class" do
-    expect {
-      Class.new(GrpcServiceMesh::RPCClient) do
-        rpc :search, target: Pbx::ApiKeyTargets::SEARCH, input: Pbx::ApiKey, kind: :route
-      end
-    }.to raise_error(ArgumentError, /output/)
+    }.to raise_error(ServiceMesh::KindMismatch, /declared topic, target is route/)
   end
 end

@@ -5,13 +5,7 @@ module GrpcServiceMesh
   # the declaration appeared in.
   Rpc = Data.define(:name, :target, :input, :output, :kind, :owner) do
     def initialize(name:, target:, input:, kind:, owner:, output: nil)
-      name = name.to_sym
-      kind = kind.to_sym
-      unless ServiceMesh::KINDS.include?(kind)
-        raise ArgumentError, "rpc #{name}: kind must be one of #{ServiceMesh::KINDS.inspect}, got #{kind.inspect}"
-      end
-      raise ArgumentError, "rpc #{name}: kind #{kind} does not match target kind #{target.kind}" unless kind == target.kind
-      raise ArgumentError, "rpc #{name}: a route needs an output message class" if kind == :route && output.nil?
+      raise ServiceMesh::KindMismatch, "rpc #{name}: declared #{kind}, target is #{target.kind}" unless kind == target.kind
 
       super(name: name, target: target, input: input, output: output, kind: kind, owner: owner)
     end

@@ -337,8 +337,8 @@ rpc name, target:, input:, kind:, output: nil
 | `output:` | the output message class protoc generated; required for `:route`, not used for `:topic` |
 | `kind:` | `:route` or `:topic`, matching `target.kind` |
 
-A `kind:` that disagrees with the target, a kind outside those two, or a
-route without `output:` raises `ArgumentError` when the file loads. `.rpcs`
+A `kind:` that disagrees with the target raises `ServiceMesh::KindMismatch`
+when the file loads. `.rpcs`
 returns every declared rpc by name, including those of superclasses, as
 `GrpcServiceMesh::Rpc` values.
 
