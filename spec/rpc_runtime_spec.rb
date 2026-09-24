@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 RSpec.describe GrpcServiceMesh::RPCRuntime do
-  let(:bus) { MemoryTransport::Bus.new }
+  let(:client) { MemoryTransport::Client.new({"url" => "nats://127.0.0.1:4222"}, ServiceMaps::NATS, MemoryTransport::Bus.new) }
 
   before do
-    GrpcServiceMesh.add_transport("nats", config: {"url" => "nats://127.0.0.1:4222"}, service_map: ServiceMaps::NATS,
-      runtime: MemoryTransport.runtime_lambda(bus), client: MemoryTransport.client_lambda(bus))
+    GrpcServiceMesh.add_transport("nats", client: client, config: {"url" => "nats://127.0.0.1:4222"},
+      runtime: MemoryTransport.runtime_lambda)
   end
 
-  it "builds the transport runtime with its deployment group's bindings, the transport's map, and the group in the config" do
+  it "builds the transport runtime with its deployment group's bindings and the group in the config" do
     api_keys = Class.new(Pbx::ApiKeyService) do
       def search(request, metadata) = request
 
@@ -31,9 +31,14 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
     expect(rpc_runtime.deployment_group).to eq("pbx")
     expect(rpc_runtime.underlying).to be_a(MemoryTransport::Runtime)
     expect(rpc_runtime.underlying.config).to eq({"url" => "nats://127.0.0.1:4222", "deployment_group" => "pbx"})
-    expect(rpc_runtime.underlying.service_map).to equal(ServiceMaps::NATS)
     expect(rpc_runtime.underlying.endpoints.map(&:target)).to eq([Pbx::ApiKeyTargets::SEARCH])
     expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Pbx::ApiKeyTargets::CREATED])
+  end
+
+  it "hands the entry's client to the runtime lambda" do
+    rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
+
+    expect(rpc_runtime.underlying.client).to equal(client)
   end
 
   it "raises UnknownTransport for a transport the router does not hold" do
@@ -53,5 +58,14 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
     expect(rpc_runtime.stop(2.5)).to be(true)
     expect(underlying.stops).to eq([2.5])
     expect(rpc_runtime.running?).to be(false)
+  end
+
+  it "leaves the client closed after stop" do
+    rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
+    rpc_runtime.start
+
+    rpc_runtime.stop(1)
+
+    expect(client.closed?).to be(true)
   end
 end

@@ -2,11 +2,9 @@
 
 # The reference generated code, served and called through one in-process transport.
 RSpec.describe "the reference Pbx service and client" do
-  let(:bus) { MemoryTransport::Bus.new }
-
   before do
-    GrpcServiceMesh.add_transport("nats", config: {"url" => "memory"}, service_map: ServiceMaps::NATS,
-      runtime: MemoryTransport.runtime_lambda(bus), client: MemoryTransport.client_lambda(bus))
+    client = MemoryTransport::Client.new({"url" => "memory"}, ServiceMaps::NATS, MemoryTransport::Bus.new)
+    GrpcServiceMesh.add_transport("nats", client: client, config: {"url" => "memory"}, runtime: MemoryTransport.runtime_lambda)
   end
 
   let(:api_keys) do

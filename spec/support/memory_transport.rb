@@ -40,7 +40,7 @@ module MemoryTransport
   end
 
   class Client
-    attr_reader :config, :service_map, :requests, :publishes
+    attr_reader :config, :service_map, :bus, :requests, :publishes
 
     def initialize(config, service_map, bus)
       @config = config
@@ -75,26 +75,27 @@ module MemoryTransport
   end
 
   class Runtime
-    attr_reader :config, :service_map, :endpoints, :subscribers, :client, :starts, :stops
+    attr_reader :client, :config, :endpoints, :subscribers, :starts, :stops
 
-    def initialize(config, service_map, endpoints: [], subscribers: [], bus: Bus.new)
+    # Binds on the given client's bus. stop closes the client.
+    def initialize(client, config, endpoints: [], subscribers: [])
       raise ServiceMesh::NoDeploymentGroup if config[ServiceMesh::DEPLOYMENT_GROUP_KEY].to_s.empty?
       raise ServiceMesh::KindMismatch, "endpoint on a topic" if endpoints.any? { |e| e.target.kind != :route }
       raise ServiceMesh::KindMismatch, "subscriber on a route" if subscribers.any? { |s| s.target.kind != :topic }
 
+      @client = client
       @config = config
-      @service_map = service_map
       @endpoints = endpoints
       @subscribers = subscribers
-      @bus = bus
-      @client = Client.new(config, service_map, bus)
       @starts = 0
       @stops = []
       @running = false
     end
 
+    def service_map = @client.service_map
+
     def start
-      @bus.bind(@endpoints, @subscribers)
+      @client.bus.bind(@endpoints, @subscribers)
       @starts += 1
       @running = true
       nil
@@ -102,8 +103,9 @@ module MemoryTransport
 
     def stop(drain)
       @stops << drain
-      @bus.unbind(@endpoints, @subscribers)
+      @client.bus.unbind(@endpoints, @subscribers)
       @running = false
+      @client.close
       true
     end
 
@@ -112,13 +114,9 @@ module MemoryTransport
     end
   end
 
-  # The two lambdas GrpcServiceMesh.add_transport takes, for one bus.
-  def self.runtime_lambda(bus)
-    ->(config, service_map, endpoints:, subscribers:) { Runtime.new(config, service_map, endpoints: endpoints, subscribers: subscribers, bus: bus) }
-  end
-
-  def self.client_lambda(bus)
-    ->(config, service_map) { Client.new(config, service_map, bus) }
+  # The runtime lambda GrpcServiceMesh.add_transport takes.
+  def self.runtime_lambda
+    ->(client, config, endpoints:, subscribers:) { Runtime.new(client, config, endpoints: endpoints, subscribers: subscribers) }
   end
 end
 

@@ -27,9 +27,9 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.1.0"
-gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.2.0"
-gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.2.0" # or another transport
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.5.0"
+gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
+gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
 
 Requires Ruby 3.3 or newer. Depends on `service_mesh`, `google-protobuf`, and
@@ -48,38 +48,37 @@ produced from every target on the `nats` transport.
 
 The process has one `TransportRouter`, `GrpcServiceMesh.transport_router`. Each
 transport the generated code names is added once, with the transport's
-configuration Hash, the generated `ServiceMap` for it, and two lambdas that
-build the transport's `Runtime` and `Client`. Nothing generated takes a router
-argument; generated clients and `RPCRuntime` find the process router
-themselves.
+`Client` the application built from the generated `ServiceMap`, the runtime
+configuration Hash, and a lambda that builds the transport's `Runtime` on that
+client. Nothing generated takes a router argument; generated clients and
+`RPCRuntime` find the process router themselves.
 
 ```ruby
 require "grpc_service_mesh"
 require "service_mesh_nats"
 require "service_maps"
 
+config = {"url" => ENV.fetch("NATS_URL", "nats://127.0.0.1:4222")}
+client = ServiceMeshNats::Client.new(config, ServiceMaps::NATS)
+
 GrpcServiceMesh.add_transport("nats",
-  config: {"url" => ENV.fetch("NATS_URL", "nats://127.0.0.1:4222")},
-  service_map: ServiceMaps::NATS,
-  runtime: ->(config, map, endpoints:, subscribers:) { ServiceMeshNats::Runtime.new(config, map, endpoints: endpoints, subscribers: subscribers) },
-  client: ->(config, map) { ServiceMeshNats::Client.new(config, map) })
+  client: client,
+  config: config,
+  runtime: ->(c, cfg, endpoints:, subscribers:) { ServiceMeshNats::Runtime.new(c, cfg, endpoints: endpoints, subscribers: subscribers) })
 ```
 
-The `runtime` lambda receives the transport's configuration with
-`deployment_group` filled in, the transport's `ServiceMap`, and the
-`Endpoints` and `Subscribers` the `RPCRuntime` collected. The `client` lambda
-receives the configuration as given and the same map. `add_transport` under
-a name already present replaces the entry.
+The application owns the client and the connection it holds. The `runtime`
+lambda receives that client, the configuration with `deployment_group` filled
+in, and the `Endpoints` and `Subscribers` the `RPCRuntime` collected.
+`add_transport` under a name already present replaces the entry. Entries are
+added at boot, before any call or `RPCRuntime`.
 
-`transport_router.client(name)` returns the transport's `Client`. Once an
-`RPCRuntime` exists for the transport, that is the runtime's own client, so a
-process that serves and calls over one transport uses one connection.
-Otherwise it is a standalone client built once from the `client` lambda and
-kept until `transport_router.close`, which closes every standalone client
-the router built and forgets it; a process that only calls runs it before
-exit so the transport flushes what it has buffered. The runtime's `stop`
-closes the client the runtime owns. A name the router does not hold raises
-`GrpcServiceMesh::UnknownTransport`.
+`transport_router.client(name)` returns the client added under the name, so a
+process that serves and calls over one transport uses one connection. A name
+the router does not hold raises `GrpcServiceMesh::UnknownTransport`.
+`transport_router.close` closes every added client; a process that only calls
+runs it before exit so the transport flushes what it has buffered. In a
+process that serves, the `RPCRuntime`'s `stop` closes the client.
 
 ### Registering a service
 
@@ -121,12 +120,11 @@ registrations of one target hand the transport two bindings for it.
 An `RPCRuntime` serves one transport and one deployment group. Its
 constructor takes the registry's endpoints and subscribers whose target
 metadata `deployment_group` matches, fetches the transport entry from the
-router, and calls the entry's `runtime` lambda with the entry's configuration
-merged with `"deployment_group"`, the entry's `ServiceMap`, and those
-bindings. Services registered after construction are not served by it. The
-constructor also records the runtime on the router, so the router hands out
-its client from then on. A second `RPCRuntime` for a transport becomes the
-one the router's `client` uses.
+router, and calls the entry's `runtime` lambda with the entry's client, the
+entry's configuration merged with `"deployment_group"`, and those bindings.
+Services registered after construction are not served by it. The transport's
+`Runtime` binds on the client it is given, so the client generated code
+resolves through the router is the runtime's connection.
 
 ```ruby
 runtime = GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "pbx")
@@ -135,9 +133,9 @@ at_exit { runtime.stop(10) }
 ```
 
 `start`, `stop(drain)`, `running?`, and `client` delegate to the transport's
-`Runtime`, which `underlying` exposes. The transport documents what its
-runtime does, including what `stop` returns and how it treats a subscriber
-handler that raises.
+`Runtime`, which `underlying` exposes. `stop` closes the client. The transport
+documents what its runtime does, including what `stop` returns and how it
+treats a subscriber handler that raises.
 
 ### Calling a service
 
@@ -232,11 +230,11 @@ messages' binary encodings.
 | constant | role |
 |---|---|
 | `GrpcServiceMesh.transport_router` | the process `TransportRouter` |
-| `GrpcServiceMesh.add_transport(name, config:, service_map:, runtime:, client:)` | shortcut for `transport_router.add` |
+| `GrpcServiceMesh.add_transport(name, client:, config:, runtime:)` | shortcut for `transport_router.add` |
 | `GrpcServiceMesh.registry` | the process `Registry` |
 | `GrpcServiceMesh.register(service)` | shortcut for `registry.register` |
 | `GrpcServiceMesh.reset!` | test support: replaces the process router and registry with empty ones |
-| `GrpcServiceMesh::TransportRouter` | `#add(name, config:, service_map:, runtime:, client:)`, `#fetch(name)`, `#names`, `#client(name)`, `#close`, `#attach_runtime(name, rpc_runtime)`, `#runtime(name)`; `TransportRouter::Transport` is the entry, a `Data` with `config`, `service_map`, `runtime`, `client` |
+| `GrpcServiceMesh::TransportRouter` | `#add(name, client:, config:, runtime:)`, `#fetch(name)`, `#names`, `#client(name)`, `#close`; `TransportRouter::Transport` is the entry, a `Data` with `client`, `config`, `runtime` |
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
 | `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#underlying`, `#transport`, `#deployment_group` |
 | `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers` |
@@ -375,7 +373,8 @@ just test
 ```
 
 The specs run against an in-process transport in `spec/support/memory_transport.rb`
-whose runtime and client record what they were given and raise
+whose client records what it was given, whose runtime binds on the client's
+bus and closes the client on stop, and which raises
 `ServiceMesh::KindMismatch` on kind misuse. `spec/support/testproto/` holds the
 `pbx.ApiKey` message, its protoc output, and the reference generated files
 above; `just proto` regenerates the message class with `protoc`.

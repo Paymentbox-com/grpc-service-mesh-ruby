@@ -29,8 +29,8 @@ module GrpcServiceMesh
     end
 
     # Shortcut for transport_router.add.
-    def add_transport(name, config:, service_map:, runtime:, client:)
-      transport_router.add(name, config: config, service_map: service_map, runtime: runtime, client: client)
+    def add_transport(name, client:, config:, runtime:)
+      transport_router.add(name, client: client, config: config, runtime: runtime)
     end
 
     # Shortcut for registry.register.

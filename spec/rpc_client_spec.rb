@@ -1,13 +1,10 @@
 # frozen_string_literal: true
 
 RSpec.describe GrpcServiceMesh::RPCClient do
-  let(:bus) { MemoryTransport::Bus.new }
-
   # Routes "nats" to a RecordingClient running the block.
   def transport_client(&on_call)
     client = RecordingClient.new(&on_call)
-    GrpcServiceMesh.add_transport("nats", config: {}, service_map: ServiceMaps::NATS,
-      runtime: MemoryTransport.runtime_lambda(bus), client: ->(_config, _map) { client })
+    GrpcServiceMesh.add_transport("nats", client: client, config: {}, runtime: MemoryTransport.runtime_lambda)
     client
   end
 

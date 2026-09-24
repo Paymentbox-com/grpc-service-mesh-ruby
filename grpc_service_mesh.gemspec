@@ -20,5 +20,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "google-protobuf", "~> 4.26"
   spec.add_dependency "googleapis-common-protos-types", "~> 1.15"
-  spec.add_dependency "service_mesh", "~> 0.2"
+  spec.add_dependency "service_mesh", "~> 0.4"
 end
