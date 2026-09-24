@@ -59,6 +59,17 @@ module GrpcServiceMesh
       nil
     end
 
+    # Closes every standalone client the router has built and forgets them,
+    # so a later client call builds a new one. A client shared with an
+    # RPCRuntime belongs to that runtime and is released by its stop.
+    def close
+      @lock.synchronize do
+        @clients.each_value(&:close)
+        @clients.clear
+      end
+      nil
+    end
+
     # The RPCRuntime attached for +name+, or nil.
     def runtime(name)
       @lock.synchronize { @runtimes[name] }

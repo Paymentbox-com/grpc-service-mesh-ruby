@@ -47,6 +47,28 @@ RSpec.describe GrpcServiceMesh::TransportRouter do
     expect(first.service_map).to equal(ServiceMaps::NATS)
   end
 
+  it "closes the standalone clients it built and forgets them" do
+    add_nats
+    before = router.client("nats")
+
+    router.close
+    after = router.client("nats")
+
+    expect(before.closed?).to be(true)
+    expect(after).not_to equal(before)
+    expect(after.closed?).to be(false)
+  end
+
+  it "leaves the RPCRuntime's client to its runtime on close" do
+    add_nats
+    GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "pbx")
+    owned = router.client("nats")
+
+    router.close
+
+    expect(owned.closed?).to be(false)
+  end
+
   it "hands out the RPCRuntime's client once one exists for the transport" do
     add_nats
     standalone = router.client("nats")

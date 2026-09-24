@@ -75,7 +75,10 @@ raises `GrpcServiceMesh::DuplicateTransport`.
 `RPCRuntime` exists for the transport, that is the runtime's own client, so a
 process that serves and calls over one transport uses one connection.
 Otherwise it is a standalone client built once from the `client` lambda and
-kept for the life of the router. A name the router does not hold raises
+kept until `transport_router.close`, which closes every standalone client
+the router built and forgets it; a process that only calls runs it before
+exit so the transport flushes what it has buffered. The runtime's `stop`
+closes the client the runtime owns. A name the router does not hold raises
 `GrpcServiceMesh::UnknownTransport`.
 
 ### Registering a service
@@ -237,7 +240,7 @@ messages' binary encodings.
 | `GrpcServiceMesh.registry` | the process `Registry` |
 | `GrpcServiceMesh.register(service)` | shortcut for `registry.register` |
 | `GrpcServiceMesh.reset!` | test support: replaces the process router and registry with empty ones |
-| `GrpcServiceMesh::TransportRouter` | `#add(name, config:, service_map:, runtime:, client:)`, `#fetch(name)`, `#names`, `#client(name)`, `#attach_runtime(name, rpc_runtime)`, `#runtime(name)`; `TransportRouter::Transport` is the entry, a `Data` with `config`, `service_map`, `runtime`, `client` |
+| `GrpcServiceMesh::TransportRouter` | `#add(name, config:, service_map:, runtime:, client:)`, `#fetch(name)`, `#names`, `#client(name)`, `#close`, `#attach_runtime(name, rpc_runtime)`, `#runtime(name)`; `TransportRouter::Transport` is the entry, a `Data` with `config`, `service_map`, `runtime`, `client` |
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
 | `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#underlying`, `#transport`, `#deployment_group` |
 | `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers` |
