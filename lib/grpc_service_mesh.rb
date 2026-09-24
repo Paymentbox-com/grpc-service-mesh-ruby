@@ -17,17 +17,15 @@ require_relative "grpc_service_mesh/rpc_runtime"
 # RPCService and RPCClient subclasses; the application configures the process
 # TransportRouter, registers its services, and starts an RPCRuntime.
 module GrpcServiceMesh
-  @lock = Mutex.new
-
   class << self
     # The process TransportRouter.
     def transport_router
-      @lock.synchronize { @transport_router ||= TransportRouter.new }
+      @transport_router ||= TransportRouter.new
     end
 
     # The process Registry.
     def registry
-      @lock.synchronize { @registry ||= Registry.new }
+      @registry ||= Registry.new
     end
 
     # Shortcut for transport_router.add.
@@ -42,10 +40,8 @@ module GrpcServiceMesh
 
     # Test support: replaces the process router and registry with empty ones.
     def reset!
-      @lock.synchronize do
-        @transport_router = TransportRouter.new
-        @registry = Registry.new
-      end
+      @transport_router = TransportRouter.new
+      @registry = Registry.new
       nil
     end
   end

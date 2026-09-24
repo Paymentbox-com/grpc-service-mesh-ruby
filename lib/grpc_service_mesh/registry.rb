@@ -5,7 +5,6 @@ module GrpcServiceMesh
   # registry is GrpcServiceMesh.registry.
   class Registry
     def initialize
-      @lock = Mutex.new
       @endpoints = []
       @subscribers = []
     end
@@ -14,23 +13,19 @@ module GrpcServiceMesh
     # is kept, so two registrations of one Target hand the transport two
     # bindings for it.
     def register(service)
-      endpoints = service.endpoints
-      subscribers = service.subscribers
-      @lock.synchronize do
-        @endpoints.concat(endpoints)
-        @subscribers.concat(subscribers)
-      end
+      @endpoints.concat(service.endpoints)
+      @subscribers.concat(service.subscribers)
       nil
     end
 
     # Endpoints whose Target carries +deployment_group+.
     def endpoints(deployment_group)
-      @lock.synchronize { @endpoints.select { |e| in_group?(e, deployment_group) } }
+      @endpoints.select { |e| in_group?(e, deployment_group) }
     end
 
     # Subscribers whose Target carries +deployment_group+.
     def subscribers(deployment_group)
-      @lock.synchronize { @subscribers.select { |s| in_group?(s, deployment_group) } }
+      @subscribers.select { |s| in_group?(s, deployment_group) }
     end
 
     private

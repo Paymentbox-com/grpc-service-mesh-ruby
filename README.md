@@ -245,8 +245,7 @@ messages' binary encodings.
 | `GrpcServiceMesh::MeshError` | above |
 | `GrpcServiceMesh::Wire` | `CONTENT_TYPE_KEY`, `CONTENT_TYPE`, `GRPC_STATUS_KEY` |
 
-The router and the registry are guarded by a `Mutex`; the module-level
-accessors build them on first use.
+The module-level accessors build the router and the registry on first use.
 
 ## Generated code
 
