@@ -28,13 +28,6 @@ RSpec.describe GrpcServiceMesh::TransportRouter do
     expect { router.client("http") }.to raise_error(GrpcServiceMesh::UnknownTransport, 'unknown transport "http"')
   end
 
-  it "rejects a second entry under a taken name and keeps the first" do
-    add_nats({"url" => "first"})
-
-    expect { add_nats({"url" => "second"}) }.to raise_error(GrpcServiceMesh::DuplicateTransport, /"nats"/)
-    expect(router.fetch("nats").config).to eq({"url" => "first"})
-  end
-
   it "builds a standalone client once from the entry and keeps it" do
     add_nats({"url" => "u"})
 

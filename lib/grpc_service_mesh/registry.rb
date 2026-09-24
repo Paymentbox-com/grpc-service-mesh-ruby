@@ -10,19 +10,13 @@ module GrpcServiceMesh
       @subscribers = []
     end
 
-    # Adds the bindings of +service+, an RPCService instance. Raises
-    # DuplicateTarget when a binding's Target is already registered; nothing
-    # from +service+ is kept in that case.
+    # Adds the bindings of +service+, an RPCService instance. Every binding
+    # is kept, so two registrations of one Target hand the transport two
+    # bindings for it.
     def register(service)
       endpoints = service.endpoints
       subscribers = service.subscribers
       @lock.synchronize do
-        taken = @endpoints + @subscribers
-        (endpoints + subscribers).each do |binding|
-          raise DuplicateTarget.new(binding.target) if taken.any? { |b| b.target.same_channel?(binding.target) }
-
-          taken << binding
-        end
         @endpoints.concat(endpoints)
         @subscribers.concat(subscribers)
       end

@@ -16,12 +16,13 @@ module GrpcServiceMesh
       @runtimes = {}
     end
 
-    # Adds a transport. Raises DuplicateTransport when +name+ is taken.
+    # Adds a transport. Adding under a name already present replaces the
+    # entry, including any runtime and standalone client recorded under it.
     def add(name, config:, service_map:, runtime:, client:)
       @lock.synchronize do
-        raise DuplicateTransport.new(name) if @transports.key?(name)
-
         @transports[name] = Transport.new(config: config.to_h, service_map: service_map, runtime: runtime, client: client)
+        @clients.delete(name)
+        @runtimes.delete(name)
       end
       nil
     end
@@ -48,14 +49,10 @@ module GrpcServiceMesh
       end
     end
 
-    # Records +rpc_runtime+ as the runtime serving +name+. Raises
-    # DuplicateRuntime when one is already recorded.
+    # Records +rpc_runtime+ as the runtime whose client the router hands out
+    # for +name+. The newest runtime attached for a name is the one used.
     def attach_runtime(name, rpc_runtime)
-      @lock.synchronize do
-        raise DuplicateRuntime.new(name) if @runtimes.key?(name)
-
-        @runtimes[name] = rpc_runtime
-      end
+      @lock.synchronize { @runtimes[name] = rpc_runtime }
       nil
     end
 

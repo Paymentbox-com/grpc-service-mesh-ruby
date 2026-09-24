@@ -8,8 +8,9 @@ module GrpcServiceMesh
   class RPCRuntime
     attr_reader :transport, :deployment_group, :underlying
 
-    # Raises UnknownTransport, DuplicateRuntime, and whatever the transport's
-    # runtime constructor raises.
+    # Raises UnknownTransport and whatever the transport's runtime
+    # constructor raises. A second runtime for the same transport becomes
+    # the one whose client the router hands out.
     def initialize(transport:, deployment_group:)
       router = GrpcServiceMesh.transport_router
       registry = GrpcServiceMesh.registry

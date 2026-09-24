@@ -35,14 +35,4 @@ RSpec.describe GrpcServiceMesh::Registry do
     expect(registry.subscribers("billing")).to eq([])
     expect(registry.endpoints("audit")).to eq([])
   end
-
-  it "rejects a second binding for a registered target and keeps none of the second service" do
-    registry.register(api_keys.new)
-    second = Class.new(Pbx::ApiKeyService) do
-      def search(request, metadata) = request
-    end
-
-    expect { registry.register(second.new) }.to raise_error(GrpcServiceMesh::DuplicateTarget, "target pbx.ApiKeyService.Search (route) is already registered")
-    expect(registry.endpoints("pbx").size).to eq(1)
-  end
 end

@@ -68,8 +68,8 @@ GrpcServiceMesh.add_transport("nats",
 The `runtime` lambda receives the transport's configuration with
 `deployment_group` filled in, the transport's `ServiceMap`, and the
 `Endpoints` and `Subscribers` the `RPCRuntime` collected. The `client` lambda
-receives the configuration as given and the same map. Adding a name twice
-raises `GrpcServiceMesh::DuplicateTransport`.
+receives the configuration as given and the same map. `add_transport` under
+a name already present replaces the entry.
 
 `transport_router.client(name)` returns the transport's `Client`. Once an
 `RPCRuntime` exists for the transport, that is the runtime's own client, so a
@@ -113,9 +113,8 @@ GrpcServiceMesh.register(ApiKeys.new(store))
 `GrpcServiceMesh.register` takes an instance and adds its `endpoints` and
 `subscribers` to the process `Registry`, `GrpcServiceMesh.registry`. A subclass
 serves exactly the rpc methods defined in it or below it; an rpc whose method
-is missing is not bound. Registering a second binding for a target already in
-the registry raises `GrpcServiceMesh::DuplicateTarget` and keeps nothing from
-the second service.
+is missing is not bound. Every registered binding is kept, so two
+registrations of one target hand the transport two bindings for it.
 
 ### Starting an RPCRuntime
 
@@ -126,8 +125,8 @@ router, and calls the entry's `runtime` lambda with the entry's configuration
 merged with `"deployment_group"`, the entry's `ServiceMap`, and those
 bindings. Services registered after construction are not served by it. The
 constructor also records the runtime on the router, so the router hands out
-its client from then on; a second `RPCRuntime` for the same transport raises
-`GrpcServiceMesh::DuplicateRuntime`.
+its client from then on. A second `RPCRuntime` for a transport becomes the
+one the router's `client` uses.
 
 ```ruby
 runtime = GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "pbx")
@@ -220,9 +219,6 @@ The errors this library raises for misuse of its own contract descend from
 | error | raised when |
 |---|---|
 | `UnknownTransport` | a transport name the router does not hold is fetched, asked for a client, or named by a target's metadata |
-| `DuplicateTransport` | `add_transport` is called with a name the router holds |
-| `DuplicateTarget` | a second binding is registered for a target already in the registry |
-| `DuplicateRuntime` | a second `RPCRuntime` is constructed for a transport that has one |
 
 ## Wire format
 

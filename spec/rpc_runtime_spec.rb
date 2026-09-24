@@ -41,13 +41,6 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
       .to raise_error(GrpcServiceMesh::UnknownTransport, 'unknown transport "http"')
   end
 
-  it "raises DuplicateRuntime for a second runtime on the same transport" do
-    described_class.new(transport: "nats", deployment_group: "pbx")
-
-    expect { described_class.new(transport: "nats", deployment_group: "audit") }
-      .to raise_error(GrpcServiceMesh::DuplicateRuntime, /"nats"/)
-  end
-
   it "delegates start, stop, running?, and client to the transport runtime" do
     rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
     underlying = rpc_runtime.underlying
