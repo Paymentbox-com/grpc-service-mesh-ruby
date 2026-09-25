@@ -1,0 +1,11 @@
+// The message from examples/shop/order.proto in grpc-service-mesh-api. The
+// service is left out; shop_grpcmesh.rb beside this file is the hand-written
+// reference for what the generator emits from it.
+syntax = "proto3";
+
+package shop;
+
+message Order {
+  optional string id = 1;
+  optional string item = 2;
+}

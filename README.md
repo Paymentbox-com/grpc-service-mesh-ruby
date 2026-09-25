@@ -27,7 +27,7 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.7.0"
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.7.1"
 gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
 gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
@@ -40,8 +40,8 @@ No transport is a dependency.
 ## Usage
 
 The examples use the generated code shown under Generated code: the
-`Pbx::ApiKeyService`, `Pbx::ApiKeyClient`, and `Pbx::ApiKeyTargets` produced
-from the specification's `examples/pbx/api_key.proto`, and `ServiceMaps::NATS`
+`Shop::OrderService`, `Shop::OrderClient`, and `Shop::OrderTargets` produced
+from the specification's `examples/shop/order.proto`, and `ServiceMaps::NATS`
 produced from every target on the `nats` transport.
 
 ### Configuring the TransportRouter at boot
@@ -82,31 +82,31 @@ process that serves, the `RPCRuntime`'s `stop` closes the client.
 
 ### Registering a service
 
-The generated `Pbx::ApiKeyService` declares the rpcs of the proto service and
+The generated `Shop::OrderService` declares the rpcs of the proto service and
 serves nothing itself. The application subclasses it and defines a method for
 each rpc it serves. The method takes the decoded request and the inbound
 message metadata Hash. A route method returns the response message; a topic
 method's return value is ignored.
 
 ```ruby
-class ApiKeys < Pbx::ApiKeyService
+class Orders < Shop::OrderService
   def initialize(store)
     @store = store
   end
 
-  def search(request, metadata)
-    key = @store.find(request.first_name) or
-      raise GrpcServiceMesh::NotFoundError.new("no key for #{request.first_name}",
-        Google::Rpc::ErrorInfo.new(reason: "KEY_MISSING", domain: "pbx", metadata: {"request_id" => metadata["Request-Id"].to_s}))
-    Pbx::ApiKey.new(first_name: key.first_name, last_name: key.last_name)
+  def place(request, metadata)
+    @store.in_stock?(request.item) or
+      raise GrpcServiceMesh::NotFoundError.new("no item #{request.item}",
+        Google::Rpc::ErrorInfo.new(reason: "ITEM_MISSING", domain: "shop", metadata: {"request_id" => metadata["Request-Id"].to_s}))
+    Shop::Order.new(id: @store.place(request.item), item: request.item)
   end
 
-  def created(request, metadata)
+  def placed(request, metadata)
     @store.record(request)
   end
 end
 
-GrpcServiceMesh.register(ApiKeys.new(store))
+GrpcServiceMesh.register(Orders.new(store))
 ```
 
 `GrpcServiceMesh.register` takes an instance and adds its `endpoints` and
@@ -127,7 +127,7 @@ Services registered after construction are not served by it. The transport's
 resolves through the router is the runtime's connection.
 
 ```ruby
-runtime = GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "pbx")
+runtime = GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop")
 runtime.start
 at_exit { runtime.stop(10) }
 ```
@@ -148,11 +148,11 @@ only calls.
 
 ```ruby
 begin
-  key = Pbx::ApiKeyClient.search(Pbx::ApiKey.new(first_name: "ada"),
+  order = Shop::OrderClient.place(Shop::Order.new(item: "book"),
     metadata: {"Request-Id" => SecureRandom.uuid},
     options: {"request_timeout" => "2"})
 rescue GrpcServiceMesh::NotFoundError => e
-  e.message                # "no key for ada"
+  e.message                # "no item book"
   info = e.details.find { |d| d.is(Google::Rpc::ErrorInfo) }&.unpack(Google::Rpc::ErrorInfo)
 rescue GrpcServiceMesh::MeshError => e
   e.code                   # any other Google::Rpc::Code name
@@ -160,7 +160,7 @@ rescue NATS::Timeout, NATS::IO::NoRespondersError
   # transport errors pass through unchanged
 end
 
-Pbx::ApiKeyClient.created(Pbx::ApiKey.new(first_name: "ada"), metadata: {"Event-Id" => "e1"})
+Shop::OrderClient.placed(Shop::Order.new(id: "o-1", item: "book"), metadata: {"Event-Id" => "e1"})
 ```
 
 A route method returns the decoded response. A topic method returns `nil`. A
@@ -186,7 +186,7 @@ before anything is sent.
 `UnauthenticatedError`, `FailedPreconditionError`, `InternalError`,
 `UnavailableError`, and the rest, each named after its code. A subclass is
 built from a message and details, `GrpcServiceMesh::NotFoundError.new("no
-such key", info)`, and fixes its own code. `MeshError.new` and
+such order", info)`, and fixes its own code. `MeshError.new` and
 `MeshError.from_proto` return the subclass for the code they are given, so an
 error decoded off the wire is rescued by its class. A code with no name stays
 a plain `MeshError`, and `rescue GrpcServiceMesh::MeshError` catches every
@@ -249,7 +249,7 @@ The module-level accessors build the router and the registry on first use.
 The generator is `grpc-service-mesh-gen` from the specification repository:
 
 ```sh
-go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.5.0
+go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.5.1
 grpc-service-mesh-gen --definitions definitions --go_out=lib/go --ruby_out=lib/ruby
 ```
 
@@ -258,42 +258,42 @@ puts that directory on every `protoc` run.
 
 It writes one `<dir>_grpcmesh.rb` per directory that holds a
 service, beside the `*_pb.rb` files protoc writes, and one `service_maps.rb`
-at the output root. For `examples/pbx/api_key.proto` and `deployment.proto`
-from the specification, `pbx/pbx_grpcmesh.rb` is:
+at the output root. For `examples/shop/order.proto` and `deployment.proto`
+from the specification, `shop/shop_grpcmesh.rb` is:
 
 ```ruby
 # frozen_string_literal: true
 
 # Generated by grpc-service-mesh-gen. DO NOT EDIT.
-# source: pbx/api_key.proto
+# source: shop/order.proto
 # transport: nats
-# deployment group: pbx
+# deployment group: shop
 
 require "grpc_service_mesh"
-require_relative "api_key_pb"
+require_relative "order_pb"
 
-module Pbx
-  module ApiKeyTargets
-    SEARCH = ServiceMesh::Target.new(
-      segments: ["pbx", "ApiKeyService", "Search"],
+module Shop
+  module OrderTargets
+    PLACE = ServiceMesh::Target.new(
+      segments: ["shop", "OrderService", "Place"],
       kind: :route,
-      metadata: {"deployment_group" => "pbx", "transport" => "nats"}
+      metadata: {"deployment_group" => "shop", "transport" => "nats"}
     )
-    CREATED = ServiceMesh::Target.new(
-      segments: ["pbx", "ApiKeyService", "Created"],
+    PLACED = ServiceMesh::Target.new(
+      segments: ["shop", "OrderService", "Placed"],
       kind: :topic,
-      metadata: {"deployment_group" => "pbx", "transport" => "nats", "consumer_group" => "audit"}
+      metadata: {"deployment_group" => "shop", "transport" => "nats", "consumer_group" => "audit"}
     )
   end
 
-  class ApiKeyService < GrpcServiceMesh::RPCService
-    rpc :search, target: ApiKeyTargets::SEARCH, input: Pbx::ApiKey, output: Pbx::ApiKey, kind: :route
-    rpc :created, target: ApiKeyTargets::CREATED, input: Pbx::ApiKey, kind: :topic
+  class OrderService < GrpcServiceMesh::RPCService
+    rpc :place, target: OrderTargets::PLACE, input: Shop::Order, output: Shop::Order, kind: :route
+    rpc :placed, target: OrderTargets::PLACED, input: Shop::Order, kind: :topic
   end
 
-  class ApiKeyClient < GrpcServiceMesh::RPCClient
-    rpc :search, target: ApiKeyTargets::SEARCH, input: Pbx::ApiKey, output: Pbx::ApiKey, kind: :route
-    rpc :created, target: ApiKeyTargets::CREATED, input: Pbx::ApiKey, kind: :topic
+  class OrderClient < GrpcServiceMesh::RPCClient
+    rpc :place, target: OrderTargets::PLACE, input: Shop::Order, output: Shop::Order, kind: :route
+    rpc :placed, target: OrderTargets::PLACED, input: Shop::Order, kind: :topic
   end
 end
 ```
@@ -307,12 +307,12 @@ and `service_maps.rb` is:
 # One ServiceMap per transport, holding every Target served over it.
 
 require "service_mesh"
-require_relative "pbx/pbx_grpcmesh"
+require_relative "shop/shop_grpcmesh"
 
 module ServiceMaps
   NATS = ServiceMesh::ServiceMap.new(targets: [
-    Pbx::ApiKeyTargets::SEARCH,
-    Pbx::ApiKeyTargets::CREATED
+    Shop::OrderTargets::PLACE,
+    Shop::OrderTargets::PLACED
   ])
 end
 ```
@@ -403,7 +403,7 @@ just check      # lint, test, build
 |---|---|
 | `just proto` | run `just proto-spec` and `just proto-test` |
 | `just proto-spec` | compile `mesh/options.proto` from grpc-service-mesh-api at `spec_tag` into `lib/mesh/options_pb.rb` |
-| `just proto-test` | regenerate `spec/support/testproto/pbx/api_key_pb.rb` |
+| `just proto-test` | regenerate `spec/support/testproto/shop/order_pb.rb` |
 
 ### Updating the compiled specification protos
 
@@ -440,7 +440,7 @@ The specs run against an in-process transport in `spec/support/memory_transport.
 whose client records what it was given, whose runtime subscribes on the client's
 bus and closes the client on stop, and which raises
 `ServiceMesh::KindMismatch` on kind misuse. `spec/support/testproto/` holds the
-`pbx.ApiKey` message, its protoc output, and the reference generated files
+`shop.Order` message, its protoc output, and the reference generated files
 above; `just proto-test` regenerates the message class with `protoc`.
 `spec/mesh_options_spec.rb` loads `mesh/options_pb` and checks the four
 extensions in the descriptor pool.

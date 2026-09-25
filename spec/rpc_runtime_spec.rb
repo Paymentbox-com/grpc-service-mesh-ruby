@@ -9,45 +9,45 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
   end
 
   it "builds the transport runtime with its deployment group's bindings and the group in the config" do
-    api_keys = Class.new(Pbx::ApiKeyService) do
-      def search(request, metadata) = request
+    orders = Class.new(Shop::OrderService) do
+      def place(request, metadata) = request
 
-      def created(request, metadata)
+      def placed(request, metadata)
       end
     end
     audit_target = ServiceMesh::Target.new(segments: %w[audit AuditService Record], kind: :topic,
       metadata: {"deployment_group" => "audit", "transport" => "nats"})
     audit = Class.new(GrpcServiceMesh::RPCService) do
-      rpc :record, target: audit_target, input: Pbx::ApiKey, kind: :topic
+      rpc :record, target: audit_target, input: Shop::Order, kind: :topic
       def record(request, metadata)
       end
     end
-    GrpcServiceMesh.register(api_keys.new)
+    GrpcServiceMesh.register(orders.new)
     GrpcServiceMesh.register(audit.new)
 
-    rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
+    rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop")
 
     expect(rpc_runtime.transport).to eq("nats")
-    expect(rpc_runtime.deployment_group).to eq("pbx")
+    expect(rpc_runtime.deployment_group).to eq("shop")
     expect(rpc_runtime.underlying).to be_a(MemoryTransport::Runtime)
-    expect(rpc_runtime.underlying.config).to eq({"url" => "nats://127.0.0.1:4222", "deployment_group" => "pbx"})
-    expect(rpc_runtime.underlying.endpoints.map(&:target)).to eq([Pbx::ApiKeyTargets::SEARCH])
-    expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Pbx::ApiKeyTargets::CREATED])
+    expect(rpc_runtime.underlying.config).to eq({"url" => "nats://127.0.0.1:4222", "deployment_group" => "shop"})
+    expect(rpc_runtime.underlying.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
+    expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
   end
 
   it "hands the entry's client to the runtime lambda" do
-    rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
+    rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop")
 
     expect(rpc_runtime.underlying.client).to equal(client)
   end
 
   it "raises UnknownTransport for a transport the router does not hold" do
-    expect { described_class.new(transport: "http", deployment_group: "pbx") }
+    expect { described_class.new(transport: "http", deployment_group: "shop") }
       .to raise_error(GrpcServiceMesh::UnknownTransport, 'unknown transport "http"')
   end
 
   it "delegates start, stop, running?, and client to the transport runtime" do
-    rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
+    rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop")
     underlying = rpc_runtime.underlying
 
     expect(rpc_runtime.running?).to be(false)
@@ -61,7 +61,7 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
   end
 
   it "leaves the client closed after stop" do
-    rpc_runtime = described_class.new(transport: "nats", deployment_group: "pbx")
+    rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop")
     rpc_runtime.start
 
     rpc_runtime.stop(1)

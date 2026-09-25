@@ -67,7 +67,7 @@ proto-spec:
 # Regenerate the message classes the specs use from spec/support/testproto
 [group('build')]
 proto-test:
-    {{protoc}} --proto_path=spec/support/testproto --ruby_out=spec/support/testproto spec/support/testproto/pbx/api_key.proto
+    {{protoc}} --proto_path=spec/support/testproto --ruby_out=spec/support/testproto spec/support/testproto/shop/order.proto
 
 # Report lint findings (matches CI)
 [group('checks')]

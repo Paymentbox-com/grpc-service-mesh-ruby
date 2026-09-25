@@ -2,18 +2,18 @@
 
 RSpec.describe GrpcServiceMesh::MeshError do
   it "is a StandardError built from a code name and a message" do
-    error = described_class.new(:NOT_FOUND, "no such key")
+    error = described_class.new(:NOT_FOUND, "no such order")
 
     expect(error).to be_a(StandardError)
     expect(error.code).to eq(:NOT_FOUND)
-    expect(error.message).to eq("no such key")
-    expect(error.to_s).to eq("no such key")
+    expect(error.message).to eq("no such order")
+    expect(error.to_s).to eq("no such order")
     expect(error.details).to eq([])
-    expect(error.proto).to eq(Google::Rpc::Status.new(code: 5, message: "no such key"))
+    expect(error.proto).to eq(Google::Rpc::Status.new(code: 5, message: "no such order"))
   end
 
   it "builds the subclass for a named code" do
-    error = described_class.new(:NOT_FOUND, "no such key")
+    error = described_class.new(:NOT_FOUND, "no such order")
 
     expect(error).to be_an_instance_of(GrpcServiceMesh::NotFoundError)
     expect(error.code).to eq(:NOT_FOUND)
@@ -32,13 +32,13 @@ RSpec.describe GrpcServiceMesh::MeshError do
   end
 
   it "builds a subclass directly from a message and details" do
-    info = Google::Rpc::ErrorInfo.new(reason: "KEY_MISSING")
+    info = Google::Rpc::ErrorInfo.new(reason: "ORDER_MISSING")
 
-    error = GrpcServiceMesh::NotFoundError.new("no such key", info)
+    error = GrpcServiceMesh::NotFoundError.new("no such order", info)
 
     expect(error).to be_a(described_class)
     expect(error.code).to eq(:NOT_FOUND)
-    expect(error.message).to eq("no such key")
+    expect(error.message).to eq("no such order")
     expect(error.details[0].unpack(Google::Rpc::ErrorInfo)).to eq(info)
   end
 
@@ -62,7 +62,7 @@ RSpec.describe GrpcServiceMesh::MeshError do
   end
 
   it "accepts the code as a number" do
-    error = described_class.new(5, "no such key")
+    error = described_class.new(5, "no such order")
 
     expect(error.code).to eq(:NOT_FOUND)
     expect(error.proto.code).to eq(5)
@@ -84,7 +84,7 @@ RSpec.describe GrpcServiceMesh::MeshError do
   end
 
   it "packs detail messages and round-trips them through proto and from_proto" do
-    info = Google::Rpc::ErrorInfo.new(reason: "KEY_REVOKED", domain: "pbx", metadata: {"key" => "k1"})
+    info = Google::Rpc::ErrorInfo.new(reason: "ORDER_CANCELLED", domain: "shop", metadata: {"order" => "o-1"})
     packed = Google::Protobuf::Any.pack(Google::Rpc::RetryInfo.new)
 
     error = described_class.new(:FAILED_PRECONDITION, "revoked", info, packed)

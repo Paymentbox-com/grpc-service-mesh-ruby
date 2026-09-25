@@ -11,26 +11,26 @@ RSpec.describe GrpcServiceMesh::Registry do
   let(:billing_service) do
     target = billing_target
     Class.new(GrpcServiceMesh::RPCService) do
-      rpc :create, target: target, input: Pbx::ApiKey, output: Pbx::ApiKey, kind: :route
+      rpc :create, target: target, input: Shop::Order, output: Shop::Order, kind: :route
       def create(request, metadata) = request
     end
   end
 
-  let(:api_keys) do
-    Class.new(Pbx::ApiKeyService) do
-      def search(request, metadata) = request
+  let(:orders) do
+    Class.new(Shop::OrderService) do
+      def place(request, metadata) = request
 
-      def created(request, metadata)
+      def placed(request, metadata)
       end
     end
   end
 
   it "hands back the bindings of one deployment group" do
-    GrpcServiceMesh.register(api_keys.new)
+    GrpcServiceMesh.register(orders.new)
     GrpcServiceMesh.register(billing_service.new)
 
-    expect(registry.endpoints("pbx").map(&:target)).to eq([Pbx::ApiKeyTargets::SEARCH])
-    expect(registry.subscribers("pbx").map(&:target)).to eq([Pbx::ApiKeyTargets::CREATED])
+    expect(registry.endpoints("shop").map(&:target)).to eq([Shop::OrderTargets::PLACE])
+    expect(registry.subscribers("shop").map(&:target)).to eq([Shop::OrderTargets::PLACED])
     expect(registry.endpoints("billing").map(&:target)).to eq([billing_target])
     expect(registry.subscribers("billing")).to eq([])
     expect(registry.endpoints("audit")).to eq([])
