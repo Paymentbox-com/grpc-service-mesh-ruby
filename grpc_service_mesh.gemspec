@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.files = Dir["lib/**/*.rb"] + Dir["proto/**/*.proto"] + %w[README.md LICENSE]
+  spec.files = Dir["lib/**/*.rb"] + %w[README.md LICENSE]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "google-protobuf", "~> 4.26"

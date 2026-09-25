@@ -46,23 +46,23 @@ tag:
 [group('release')]
 release: tag build publish
 
-# A checkout of grpc-service-mesh-api, the specification whose .proto files
-# `just proto` copies into proto/. Override with `just spec=<dir> proto`.
-spec := "../grpc-service-mesh-api"
+# The grpc-service-mesh-api tag whose mesh/options.proto lib/mesh/options_pb.rb is compiled from
+spec_tag := "v0.4.0"
 
-# The specification's .proto files, as paths under both {{spec}} and proto/
-spec_protos := "mesh/options.proto google/rpc/code.proto google/rpc/status.proto google/rpc/error_details.proto"
-
-# Copy the specification's .proto files into proto/, regenerate
-# lib/mesh/options_pb.rb from them, and regenerate the specs' message classes
+# Regenerate lib/mesh/options_pb.rb from the specification at {{spec_tag}}
+# and regenerate the specs' message classes
 [group('build')]
 proto: proto-spec proto-test
 
-# Copy the specification's .proto files into proto/ and regenerate lib/mesh/options_pb.rb
+# Compile mesh/options.proto from a shallow clone of grpc-service-mesh-api at {{spec_tag}} into lib/mesh/options_pb.rb
 [group('build')]
 proto-spec:
-    for f in {{spec_protos}}; do mkdir -p "proto/$(dirname "$f")" && cp "{{spec}}/$f" "proto/$f"; done
-    {{protoc}} --proto_path=proto --ruby_out=lib proto/mesh/options.proto
+    #!/usr/bin/env bash
+    set -euo pipefail
+    spec="$(mktemp -d)"
+    trap 'rm -rf "$spec"' EXIT
+    git -c advice.detachedHead=false clone --quiet --depth 1 --branch {{spec_tag}} https://github.com/Paymentbox-com/grpc-service-mesh-api "$spec"
+    {{protoc}} --proto_path="$spec" --ruby_out=lib "$spec/mesh/options.proto"
 
 # Regenerate the message classes the specs use from spec/support/testproto
 [group('build')]
