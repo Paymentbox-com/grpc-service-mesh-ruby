@@ -46,9 +46,27 @@ tag:
 [group('release')]
 release: tag build publish
 
+# A checkout of grpc-service-mesh-api, the specification whose .proto files
+# `just proto` copies into proto/. Override with `just spec=<dir> proto`.
+spec := "../grpc-service-mesh-api"
+
+# The specification's .proto files, as paths under both {{spec}} and proto/
+spec_protos := "mesh/options.proto google/rpc/code.proto google/rpc/status.proto google/rpc/error_details.proto"
+
+# Copy the specification's .proto files into proto/, regenerate
+# lib/mesh/options_pb.rb from them, and regenerate the specs' message classes
+[group('build')]
+proto: proto-spec proto-test
+
+# Copy the specification's .proto files into proto/ and regenerate lib/mesh/options_pb.rb
+[group('build')]
+proto-spec:
+    for f in {{spec_protos}}; do mkdir -p "proto/$(dirname "$f")" && cp "{{spec}}/$f" "proto/$f"; done
+    {{protoc}} --proto_path=proto --ruby_out=lib proto/mesh/options.proto
+
 # Regenerate the message classes the specs use from spec/support/testproto
 [group('build')]
-proto:
+proto-test:
     {{protoc}} --proto_path=spec/support/testproto --ruby_out=spec/support/testproto spec/support/testproto/pbx/api_key.proto
 
 # Report lint findings (matches CI)

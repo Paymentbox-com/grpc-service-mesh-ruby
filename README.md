@@ -27,7 +27,7 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.5.0"
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.6.0"
 gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
 gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
@@ -249,7 +249,7 @@ The module-level accessors build the router and the registry on first use.
 The generator is `grpc-service-mesh-gen` from the specification repository:
 
 ```sh
-go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.1.0
+go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.2.0
 grpc-service-mesh-gen --definitions definitions --out lib --lang go,ruby
 ```
 
@@ -357,6 +357,37 @@ package, service name, and method name, and metadata `deployment_group`,
 `transport`, and `consumer_group` when the method option is set. Nothing reads
 proto options at runtime.
 
+## Specification protos
+
+The gem ships the specification's `.proto` files and the compiled Ruby form
+of its options file.
+
+- `proto/` holds byte copies of the specification's `mesh/options.proto` and
+  `google/rpc/{code,status,error_details}.proto` at their import paths.
+- `lib/mesh/options_pb.rb` is protoc's Ruby output of `mesh/options.proto`.
+  It adds the file to the generated descriptor pool, which then resolves the
+  extensions `mesh.kind`, `mesh.consumer_group`, `mesh.deployment_group`, and
+  `mesh.transport`, and defines `Mesh::Kind`.
+
+The compiled forms of `google/rpc/*.proto` are the published ones in
+`googleapis-common-protos-types`.
+
+Every `*_pb.rb` protoc writes from a definitions file that imports
+`mesh/options.proto` calls `require 'mesh/options_pb'`, which resolves from
+this gem's `lib`. Plain `protoc` finds the specification's files through this gem's `proto/`
+directory:
+
+```sh
+protoc \
+  -I definitions \
+  -I "$(bundle info --path grpc_service_mesh)/proto" \
+  --ruby_out=lib/ruby \
+  $(find definitions -name '*.proto')
+```
+
+Only files under `definitions/` are listed. The specification's files are
+only on the include path.
+
 ## Development
 
 ```
@@ -364,6 +395,41 @@ mise install
 just install
 just check      # lint, test, build
 ```
+
+| recipe | what it does |
+|---|---|
+| `just proto` | run `just proto-spec` and `just proto-test` |
+| `just proto-spec` | copy the specification's `.proto` files into `proto/` and regenerate `lib/mesh/options_pb.rb` |
+| `just proto-test` | regenerate `spec/support/testproto/pbx/api_key_pb.rb` |
+
+### Updating the compiled specification protos
+
+`proto/` and `lib/mesh/options_pb.rb` are copies and compiled forms of the
+files in the specification repository,
+[grpc-service-mesh-api](https://github.com/Paymentbox-com/grpc-service-mesh-api).
+They are never edited here. `just proto-spec` copies the files from a
+checkout of that repository, `../grpc-service-mesh-api` by default and set
+with `just spec=<dir> proto`, and regenerates `lib/mesh/options_pb.rb` with
+`protoc`.
+
+When the specification changes its `.proto` files:
+
+1. Update the checkout of grpc-service-mesh-api to the specification commit
+   or tag being adopted.
+2. Run `just proto`.
+3. Review the diff under `proto/` and `lib/mesh/`.
+4. Run `just check`.
+5. Bump the version in `lib/grpc_service_mesh/version.rb`, commit, and run
+   `just tag`.
+
+When the specification adds a `.proto` file, its import path goes into the
+`spec_protos` list in the `justfile`. A file that defines options or messages
+this gem compiles also gets its own `protoc` line in `proto-spec`, writing
+under `lib/`. The gemspec ships everything under `proto/`.
+
+The extension numbers in `mesh/options.proto` are part of every definitions
+project's compiled descriptors. A change to an extension number is a breaking
+change for every definitions project.
 
 ## Tests
 
@@ -376,6 +442,8 @@ whose client records what it was given, whose runtime subscribes on the client's
 bus and closes the client on stop, and which raises
 `ServiceMesh::KindMismatch` on kind misuse. `spec/support/testproto/` holds the
 `pbx.ApiKey` message, its protoc output, and the reference generated files
-above; `just proto` regenerates the message class with `protoc`.
+above; `just proto-test` regenerates the message class with `protoc`.
+`spec/mesh_options_spec.rb` loads `mesh/options_pb` and checks the four
+extensions in the descriptor pool.
 `spec/spec_helper.rb` gives every example an empty process router and
 registry.
