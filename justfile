@@ -47,7 +47,7 @@ tag:
 release: tag build publish
 
 # The grpc-service-mesh-api tag whose mesh/options.proto lib/mesh/options_pb.rb is compiled from
-spec_tag := "v0.4.0"
+spec_tag := "v0.6.0"
 
 # Regenerate lib/mesh/options_pb.rb from the specification at {{spec_tag}}
 # and regenerate the specs' message classes

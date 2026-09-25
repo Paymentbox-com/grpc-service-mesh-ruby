@@ -7,7 +7,7 @@ require 'google/protobuf'
 require 'google/protobuf/descriptor_pb'
 
 
-descriptor_data = "\n\x12mesh/options.proto\x12\x04mesh\x1a google/protobuf/descriptor.proto*\x1c\n\x04Kind\x12\t\n\x05ROUTE\x10\x00\x12\t\n\x05TOPIC\x10\x01::\n\x04kind\x12\x1e.google.protobuf.MethodOptions\x18\xd1\x86\x03 \x01(\x0e\x32\n.mesh.Kind:8\n\x0e\x63onsumer_group\x12\x1e.google.protobuf.MethodOptions\x18\xd2\x86\x03 \x01(\t:8\n\x10\x64\x65ployment_group\x12\x1c.google.protobuf.FileOptions\x18\xd3\x86\x03 \x01(\t:1\n\ttransport\x12\x1c.google.protobuf.FileOptions\x18\xd4\x86\x03 \x01(\tB<Z:github.com/Paymentbox-com/grpc-service-mesh-go/meshoptionsb\x06proto3"
+descriptor_data = "\n\x12mesh/options.proto\x12\x04mesh\x1a google/protobuf/descriptor.proto*\x1c\n\x04Kind\x12\t\n\x05ROUTE\x10\x00\x12\t\n\x05TOPIC\x10\x01::\n\x04kind\x12\x1e.google.protobuf.MethodOptions\x18\xd1\x86\x03 \x01(\x0e\x32\n.mesh.Kind:8\n\x0e\x63onsumer_group\x12\x1e.google.protobuf.MethodOptions\x18\xd2\x86\x03 \x01(\t:8\n\x10\x64\x65ployment_group\x12\x1c.google.protobuf.FileOptions\x18\xd3\x86\x03 \x01(\t:1\n\ttransport\x12\x1c.google.protobuf.FileOptions\x18\xd4\x86\x03 \x01(\t:3\n\x0broot_prefix\x12\x1c.google.protobuf.FileOptions\x18\xd5\x86\x03 \x01(\tB<Z:github.com/Paymentbox-com/grpc-service-mesh-go/meshoptionsb\x06proto3"
 
 pool = ::Google::Protobuf::DescriptorPool.generated_pool
 pool.add_serialized_file(descriptor_data)
