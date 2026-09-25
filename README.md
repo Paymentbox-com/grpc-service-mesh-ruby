@@ -249,9 +249,12 @@ The module-level accessors build the router and the registry on first use.
 The generator is `grpc-service-mesh-gen` from the specification repository:
 
 ```sh
-go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.2.0
-grpc-service-mesh-gen --definitions definitions --out lib --lang go,ruby
+go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.3.0
+grpc-service-mesh-gen --definitions definitions -I "$(bundle info --path grpc_service_mesh)/proto" --out lib --lang go,ruby
 ```
+
+`-I` names this gem's `proto/` directory, which holds the specification's
+protos at the version `lib/mesh/options_pb.rb` was compiled from.
 
 It writes one `<dir>_grpcmesh.rb` per directory that holds a
 service, beside the `*_pb.rb` files protoc writes, and one `service_maps.rb`
