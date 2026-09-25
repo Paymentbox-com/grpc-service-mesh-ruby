@@ -5,7 +5,8 @@ require_relative "lib/grpc_service_mesh/version"
 Gem::Specification.new do |spec|
   spec.name = "grpc_service_mesh"
   spec.version = GrpcServiceMesh::VERSION
-  spec.authors = ["Paymentbox"]
+  spec.authors = ["Bryant Morrill", "Paymentbox"]
+  spec.email = ["bmorrill@pmtbox.com"]
   spec.summary = "Ruby library for the gRPC Service Mesh API"
   spec.homepage = "https://github.com/Paymentbox-com/grpc-service-mesh-ruby"
   spec.license = "MIT"
