@@ -37,12 +37,5 @@ module GrpcServiceMesh
     def register(service)
       registry.register(service)
     end
-
-    # Test support: replaces the process router and registry with empty ones.
-    def reset!
-      @transport_router = TransportRouter.new
-      @registry = Registry.new
-      nil
-    end
   end
 end

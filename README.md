@@ -233,7 +233,6 @@ messages' binary encodings.
 | `GrpcServiceMesh.add_transport(name, client:, config:, runtime:)` | shortcut for `transport_router.add` |
 | `GrpcServiceMesh.registry` | the process `Registry` |
 | `GrpcServiceMesh.register(service)` | shortcut for `registry.register` |
-| `GrpcServiceMesh.reset!` | test support: replaces the process router and registry with empty ones |
 | `GrpcServiceMesh::TransportRouter` | `#add(name, client:, config:, runtime:)`, `#fetch(name)`, `#names`, `#client(name)`, `#close`; `TransportRouter::Transport` is the entry, a `Data` with `client`, `config`, `runtime` |
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
 | `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#underlying`, `#transport`, `#deployment_group` |
@@ -378,5 +377,5 @@ bus and closes the client on stop, and which raises
 `ServiceMesh::KindMismatch` on kind misuse. `spec/support/testproto/` holds the
 `pbx.ApiKey` message, its protoc output, and the reference generated files
 above; `just proto` regenerates the message class with `protoc`.
-`GrpcServiceMesh.reset!` runs before each example so every example starts
-from an empty router and registry.
+`spec/spec_helper.rb` gives every example an empty process router and
+registry.

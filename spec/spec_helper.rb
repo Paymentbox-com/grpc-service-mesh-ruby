@@ -10,5 +10,9 @@ RSpec.configure do |config|
   config.order = :random
   Kernel.srand config.seed
 
-  config.before { GrpcServiceMesh.reset! }
+  # Every example starts from an empty process router and registry.
+  config.before do
+    GrpcServiceMesh.instance_variable_set(:@transport_router, GrpcServiceMesh::TransportRouter.new)
+    GrpcServiceMesh.instance_variable_set(:@registry, GrpcServiceMesh::Registry.new)
+  end
 end
