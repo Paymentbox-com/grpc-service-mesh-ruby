@@ -35,9 +35,16 @@ build:
 publish:
     mise exec -- gem push pkg/grpc_service_mesh-{{version}}.gem
 
-# Build the gem and push it to rubygems.org
+# Tag the current commit v<version> and push the tag; refuses a working tree with changes
 [group('release')]
-release: build publish
+tag:
+    test -z "$(git status --porcelain)" || (echo "commit or stash your changes first" && exit 1)
+    git tag -a v{{version}} -m "v{{version}}"
+    git push origin v{{version}}
+
+# Tag the current commit, build the gem, and push it to rubygems.org
+[group('release')]
+release: tag build publish
 
 # Regenerate the message classes the specs use from spec/support/testproto
 [group('build')]
