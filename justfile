@@ -5,6 +5,9 @@
 # a bare environment where `mise` is not on PATH, change this to
 # "/opt/homebrew/bin/mise exec -- bundle".
 bundle := "mise exec -- bundle"
+
+# The version in the gemspec, which names the built gem file
+version := `mise exec -- ruby -e 'print Gem::Specification.load("grpc_service_mesh.gemspec").version'`
 protoc := env("PROTOC", "protoc")
 
 # List all recipes
@@ -21,11 +24,20 @@ install:
 test:
     {{bundle}} exec rspec
 
-# Build the gem into pkg/
+# Build the gem into pkg/grpc_service_mesh-<version>.gem
 [group('build')]
 build:
     mkdir -p pkg
-    mise exec -- gem build grpc_service_mesh.gemspec --output pkg/grpc_service_mesh.gem
+    mise exec -- gem build grpc_service_mesh.gemspec --output pkg/grpc_service_mesh-{{version}}.gem
+
+# Push the built gem to rubygems.org; asks for the MFA code
+[group('release')]
+publish:
+    mise exec -- gem push pkg/grpc_service_mesh-{{version}}.gem
+
+# Build the gem and push it to rubygems.org
+[group('release')]
+release: build publish
 
 # Regenerate the message classes the specs use from spec/support/testproto
 [group('build')]
