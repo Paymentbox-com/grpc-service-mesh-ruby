@@ -4,7 +4,7 @@ RSpec.describe GrpcServiceMesh::RPCClient do
   # Routes "nats" to a RecordingClient running the block.
   def transport_client(&on_call)
     client = RecordingClient.new(&on_call)
-    GrpcServiceMesh.add_transport("nats", client: client, config: {}, runtime: MemoryTransport.runtime_lambda)
+    GrpcServiceMesh.add_transport("nats", client)
     client
   end
 

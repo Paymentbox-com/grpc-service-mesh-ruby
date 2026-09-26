@@ -1,43 +1,33 @@
 # frozen_string_literal: true
 
 module GrpcServiceMesh
-  # Holds one entry per transport name and hands out the Client for each.
-  # The process router is GrpcServiceMesh.transport_router. Entries are added
-  # at boot; client is a hash read.
+  # Holds one Client per transport name: the transport-specific Client the
+  # application built and owns. The process router is
+  # GrpcServiceMesh.transport_router. Clients are added at boot; client is a
+  # hash read.
   class TransportRouter
-    # One configured transport. +client+ is the transport's Client the
-    # application built and owns, +config+ the runtime configuration, and
-    # +runtime+ is ->(client, config, endpoints:, subscribers:) returning the
-    # transport's Runtime.
-    Transport = Data.define(:client, :config, :runtime)
-
     def initialize
-      @transports = {}
+      @clients = {}
     end
 
-    # Adds a transport. Adding under a name already present replaces the entry.
-    def add(name, client:, config:, runtime:)
-      @transports[name] = Transport.new(client: client, config: config.to_h, runtime: runtime)
+    # Adds a client. Adding under a name already present replaces the client.
+    def add(name, client)
+      @clients[name] = client
       nil
     end
 
-    # The Transport entry for +name+. Raises UnknownTransport.
-    def fetch(name)
-      @transports.fetch(name) { raise UnknownTransport.new(name) }
-    end
-
     def names
-      @transports.keys
+      @clients.keys
     end
 
     # The Client for +name+. Raises UnknownTransport.
     def client(name)
-      fetch(name).client
+      @clients.fetch(name) { raise UnknownTransport.new(name) }
     end
 
-    # Closes every entry's client.
+    # Closes every client.
     def close
-      @transports.each_value { |transport| transport.client.close }
+      @clients.each_value(&:close)
       nil
     end
   end

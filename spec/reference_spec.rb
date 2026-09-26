@@ -4,7 +4,7 @@
 RSpec.describe "the reference Shop service and client" do
   before do
     client = MemoryTransport::Client.new({"url" => "memory"}, ServiceMaps::NATS, MemoryTransport::Bus.new)
-    GrpcServiceMesh.add_transport("nats", client: client, config: {"url" => "memory"}, runtime: MemoryTransport.runtime_lambda)
+    GrpcServiceMesh.add_transport("nats", client)
   end
 
   let(:orders) do
@@ -31,7 +31,7 @@ RSpec.describe "the reference Shop service and client" do
 
   it "serves a route and a topic through an RPCRuntime and stops" do
     GrpcServiceMesh.register(orders)
-    rpc_runtime = GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop")
+    rpc_runtime = GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop", runtime: MemoryTransport.runtime_lambda)
     rpc_runtime.start
 
     found = Shop::OrderClient.place(Shop::Order.new(id: "o-1"), metadata: {"Request-Id" => "r1"})
@@ -45,7 +45,7 @@ RSpec.describe "the reference Shop service and client" do
 
   it "carries a MeshError with its details from the handler to the caller" do
     GrpcServiceMesh.register(orders)
-    GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop").start
+    GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop", runtime: MemoryTransport.runtime_lambda).start
 
     expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::MeshError) do |error|
       expect(error.code).to eq(:INVALID_ARGUMENT)
