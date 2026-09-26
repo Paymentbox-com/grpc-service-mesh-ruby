@@ -131,9 +131,9 @@ runtime.start
 at_exit { runtime.stop(10) }
 ```
 
-A name the router does not hold raises `GrpcServiceMesh::UnknownTransport`
-from the constructor, and whatever the `runtime:` lambda raises passes
-through.
+A `runtime:` that does not respond to `call` raises `ArgumentError`, a name
+the router does not hold raises `GrpcServiceMesh::UnknownTransport` from the
+constructor, and whatever the `runtime:` lambda raises passes through.
 
 `start`, `stop(drain)`, `running?`, and `client` delegate to the transport's
 `Runtime`, which `underlying` exposes. `stop` closes the client. The transport

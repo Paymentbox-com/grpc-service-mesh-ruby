@@ -50,6 +50,11 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
     expect(config).to eq({"deployment_group" => "configured"})
   end
 
+  it "raises ArgumentError when runtime: is not callable" do
+    expect { described_class.new(transport: "nats", deployment_group: "shop", runtime: nil) }
+      .to raise_error(ArgumentError, /runtime: must be a callable/)
+  end
+
   it "raises UnknownTransport for a transport the router does not hold" do
     calls = []
     counting = ->(*args, **kwargs) { calls << [args, kwargs] }

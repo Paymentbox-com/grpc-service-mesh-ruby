@@ -12,6 +12,8 @@ module GrpcServiceMesh
     # transport's Runtime. It receives +config+ with deployment_group set.
     # Raises UnknownTransport and whatever +runtime+ raises.
     def initialize(transport:, deployment_group:, runtime:, config: {})
+      raise ArgumentError, "runtime: must be a callable that builds the transport's Runtime, got #{runtime.inspect}" unless runtime.respond_to?(:call)
+
       registry = GrpcServiceMesh.registry
       client = GrpcServiceMesh.transport_router.client(transport)
       @transport = transport
