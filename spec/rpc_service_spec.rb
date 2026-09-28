@@ -98,6 +98,19 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf"})
     end
 
+    it "drops Mesh-Option- keys set on a response" do
+      service = Class.new(Shop::OrderService) do
+        def place(request)
+          request.mesh_metadata = {"Request-Id" => "r1", "Mesh-Option-request_timeout" => "2"}
+          request
+        end
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(reply.metadata).to eq({"Request-Id" => "r1", "Content-Type" => "application/x-protobuf"})
+    end
+
     it "replies with the encoded Status and Grpc-Status when the handler raises a MeshError" do
       info = Google::Rpc::ErrorInfo.new(reason: "ORDER_CANCELLED", domain: "shop")
       service = Class.new(Shop::OrderService) do
@@ -135,6 +148,18 @@ RSpec.describe GrpcServiceMesh::RPCService do
       reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
 
       expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"})
+    end
+
+    it "drops Mesh-Option- keys set on a MeshError" do
+      service = Class.new(Shop::OrderService) do
+        def place(_request)
+          raise GrpcServiceMesh::NotFoundError.new("no such order", mesh_metadata: {"Retry-After" => "30", "Mesh-Option-request_timeout" => "2"})
+        end
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(reply.metadata).to eq({"Retry-After" => "30", "Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"})
     end
 
     it "reports any other exception as UNKNOWN with its message" do

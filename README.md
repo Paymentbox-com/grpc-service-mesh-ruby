@@ -21,7 +21,7 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.12.0"
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.14.0"
 gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
 gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
@@ -128,7 +128,8 @@ error's `mesh_metadata`, which the error takes on construction as
 `mesh_metadata:` or through `mesh_metadata=`. The `UNKNOWN` reply for any
 other exception carries only the library's keys. The library writes
 `Content-Type` and `Grpc-Status` over the application's values, so its own
-values win, and a successful reply carries no `Grpc-Status`.
+values win, and a successful reply carries no `Grpc-Status`. Keys that start
+with `Mesh-Option-` are dropped from the reply's metadata.
 
 ```ruby
 def place(request)
@@ -187,18 +188,24 @@ treats a subscriber handler that raises.
 
 ### Calling a service
 
-Generated client methods are class methods, `name(request, options: {})`.
-The outbound message's metadata is the request's `mesh_metadata`, which the
-call reads and leaves unchanged. `options:` is the per-call Hash the
-transport's `request` or `publish` takes. Every call resolves the transport's
-`Client` through the router, so the same code runs in a process that serves
-and in one that only calls.
+Generated client methods are class methods, `name(request)`. The call reads
+the request's `mesh_metadata` and leaves it unchanged. Every call resolves the
+transport's `Client` through the router, so the same code runs in a process
+that serves and in one that only calls.
+
+Keys of the request's `mesh_metadata` that start with `Mesh-Option-`
+(`GrpcServiceMesh::OPTION_PREFIX`) are transport options. The call removes them
+from the outbound message's metadata and passes each one to the transport's
+`request` or `publish` options with the prefix removed, so
+`"Mesh-Option-request_timeout" => "2"` reaches the transport as option
+`"request_timeout" => "2"`. The match is exact and case-sensitive. Every other
+key is the outbound message's metadata.
 
 ```ruby
 request = Shop::Order.new(item: "book")
-request.mesh_metadata = {"Request-Id" => SecureRandom.uuid}
+request.mesh_metadata = {"Request-Id" => SecureRandom.uuid, "Mesh-Option-request_timeout" => "2"}
 begin
-  order = Shop::OrderClient.place(request, options: {"request_timeout" => "2"})
+  order = Shop::OrderClient.place(request)
 rescue GrpcServiceMesh::NotFoundError => e
   e.message                # "no item book"
   info = e.details.find { |d| d.is(Google::Rpc::ErrorInfo) }&.unpack(Google::Rpc::ErrorInfo)
@@ -222,7 +229,8 @@ before anything is sent.
 The response a route method returns has `mesh_metadata` set to the reply's
 metadata. A `MeshError` raised from a reply, including the `INTERNAL` error for
 a payload that does not decode, has `mesh_metadata` set to that reply's
-metadata. An error before a reply arrives, such as a transport error, carries
+metadata. Keys that start with `Mesh-Option-` are dropped from it in both
+cases. An error before a reply arrives, such as a transport error, carries
 none.
 
 ```ruby
@@ -306,10 +314,11 @@ messages' binary encodings.
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
 | `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:, runtime:, config: {}, endpoints: nil, subscribers: nil)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#t_runtime`, `#transport`, `#deployment_group` |
 | `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers`; a handler method takes `(request)` |
-| `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `name(request, options: {})`, `.rpcs` |
+| `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `name(request)`, `.rpcs` |
 | `GrpcServiceMesh::Metadata` | module adding `#mesh_metadata` and `#mesh_metadata=` to a message class |
 | `GrpcServiceMesh::Rpc` | a `Data` with `name`, `target`, `input`, `output`, `kind`, `owner`, `#route?` |
 | `GrpcServiceMesh::MeshError` | above |
+| `GrpcServiceMesh::OPTION_PREFIX` | `"Mesh-Option-"`, the start of a metadata key that is a transport option |
 | `GrpcServiceMesh::Wire` | `CONTENT_TYPE_KEY`, `CONTENT_TYPE`, `GRPC_STATUS_KEY` |
 
 The module-level accessors build the router and the registry on first use.
@@ -319,7 +328,7 @@ The module-level accessors build the router and the registry on first use.
 The generator is `grpc-service-mesh-gen` from the specification repository:
 
 ```sh
-go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.7.0
+go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.8.0
 grpc-service-mesh-gen --definitions definitions --go_out=lib/go --ruby_out=lib/ruby
 ```
 
@@ -423,12 +432,14 @@ class defines at or below the declaring class, and `#subscribers` a
 `ServiceMesh::Subscriber` for each such topic. The handler in each decodes
 the payload with `input.decode`, sets the decoded message's `mesh_metadata` to
 the inbound metadata, calls the method with it, and encodes the response with
-`to_proto`, sending the response's `mesh_metadata` as the reply's metadata.
+`to_proto`, sending the response's `mesh_metadata`, without keys that start
+with `Mesh-Option-`, as the reply's metadata.
 
 On an `RPCClient` subclass the declaration defines the class method
-`name(request, options: {})`. A route method calls the transport client's
+`name(request)`. It splits the request's `mesh_metadata` into the message
+metadata and the options. A route method calls the transport client's
 `request(message, options)` and decodes the reply, setting the response's
-`mesh_metadata` to the reply's metadata; a topic
+`mesh_metadata` to the reply's metadata without `Mesh-Option-` keys; a topic
 method calls `publish(message, options)` and returns `nil`. The transport is
 `target.metadata["transport"]`, resolved through
 `GrpcServiceMesh.transport_router.client` on every call.

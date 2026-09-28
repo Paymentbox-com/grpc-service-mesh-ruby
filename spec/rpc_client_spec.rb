@@ -19,12 +19,12 @@ RSpec.describe GrpcServiceMesh::RPCClient do
   end
 
   describe "a route method" do
-    it "sends the encoded request with its metadata and the options to the target's transport and decodes the reply" do
+    it "sends the encoded request with its metadata to the target's transport and decodes the reply" do
       response = Shop::Order.new(id: "O-1")
       client = transport_client { reply({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"}, response.to_proto) }
       request = order({"Request-Id" => "r1"}, id: "o-1")
 
-      result = Shop::OrderClient.place(request, options: {"request_timeout" => "2"})
+      result = Shop::OrderClient.place(request)
 
       expect(result).to eq(response)
       expect(result.mesh_metadata).to eq({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"})
@@ -33,8 +33,28 @@ RSpec.describe GrpcServiceMesh::RPCClient do
       expect(message.target).to eq(Shop::OrderTargets::PLACE)
       expect(message.metadata).to eq({"Request-Id" => "r1", "Content-Type" => "application/x-protobuf"})
       expect(Shop::Order.decode(message.payload)).to eq(Shop::Order.new(id: "o-1"))
-      expect(options).to eq({"request_timeout" => "2"})
+      expect(options).to eq({})
       expect(request.mesh_metadata).to eq({"Request-Id" => "r1"})
+    end
+
+    it "passes Mesh-Option- keys as transport options with the prefix removed and leaves the request unchanged" do
+      client = transport_client { reply({}, Shop::Order.new.to_proto) }
+      request = order({"Request-Id" => "r1", "Mesh-Option-request_timeout" => "2"})
+
+      Shop::OrderClient.place(request)
+
+      message, options = client.requests.first
+      expect(message.metadata).to eq({"Request-Id" => "r1", "Content-Type" => "application/x-protobuf"})
+      expect(options).to eq({"request_timeout" => "2"})
+      expect(request.mesh_metadata).to eq({"Request-Id" => "r1", "Mesh-Option-request_timeout" => "2"})
+    end
+
+    it "drops Mesh-Option- keys from the reply's metadata on the response" do
+      transport_client { reply({"Request-Id" => "r1", "Mesh-Option-request_timeout" => "2"}, Shop::Order.new.to_proto) }
+
+      result = Shop::OrderClient.place(Shop::Order.new)
+
+      expect(result.mesh_metadata).to eq({"Request-Id" => "r1"})
     end
 
     it "sends Content-Type with no request metadata or options" do
@@ -47,10 +67,10 @@ RSpec.describe GrpcServiceMesh::RPCClient do
       expect(options).to eq({})
     end
 
-    it "raises the MeshError a reply with Grpc-Status carries, with the reply's metadata" do
+    it "raises the MeshError a reply with Grpc-Status carries, with the reply's metadata without Mesh-Option- keys" do
       info = Google::Rpc::ErrorInfo.new(reason: "ORDER_CANCELLED", domain: "shop")
       status = Google::Rpc::Status.new(code: 5, message: "no such order", details: [Google::Protobuf::Any.pack(info)])
-      transport_client { reply({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"}, status.to_proto) }
+      transport_client { reply({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30", "Mesh-Option-x" => "1"}, status.to_proto) }
 
       expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::NotFoundError) do |error|
         expect(error.code).to eq(:NOT_FOUND)
@@ -99,10 +119,10 @@ RSpec.describe GrpcServiceMesh::RPCClient do
   end
 
   describe "a topic method" do
-    it "publishes the encoded request with its metadata and the options and returns nil" do
+    it "publishes the encoded request with its metadata and the Mesh-Option- keys as options and returns nil" do
       client = transport_client { nil }
 
-      result = Shop::OrderClient.placed(order({"Event-Id" => "e1"}, id: "o-1"), options: {"flush" => "1"})
+      result = Shop::OrderClient.placed(order({"Event-Id" => "e1", "Mesh-Option-flush" => "1"}, id: "o-1"))
 
       expect(result).to be_nil
       message, options = client.publishes.first

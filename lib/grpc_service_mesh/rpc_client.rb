@@ -2,9 +2,11 @@
 
 module GrpcServiceMesh
   # Base of every generated client class. Each declared rpc becomes a class
-  # method, +name(request, options: {})+, that resolves the transport's Client
-  # through the process router on every call. The outbound message metadata is
-  # the request's mesh_metadata.
+  # method, +name(request)+, that resolves the transport's Client through the
+  # process router on every call. The request's mesh_metadata is read and left
+  # unchanged: its keys that start with OPTION_PREFIX are the transport
+  # options, with the prefix removed, and the other keys are the message
+  # metadata.
   class RPCClient
     extend RpcDSL
 
@@ -13,24 +15,26 @@ module GrpcServiceMesh
 
       def define_rpc(rpc)
         if rpc.route?
-          define_singleton_method(rpc.name) do |request, options: {}|
-            RPCClient.request(rpc, request, options)
+          define_singleton_method(rpc.name) do |request|
+            RPCClient.request(rpc, request)
           end
         else
-          define_singleton_method(rpc.name) do |request, options: {}|
-            RPCClient.publish(rpc, request, options)
+          define_singleton_method(rpc.name) do |request|
+            RPCClient.publish(rpc, request)
           end
         end
       end
     end
 
     # Sends +request+ to a route and returns the decoded response, whose
-    # mesh_metadata is the reply's metadata. Raises MeshError for a reply
-    # carrying Grpc-Status, or INTERNAL when either payload does not decode;
-    # either error's mesh_metadata is the reply's metadata.
-    def self.request(rpc, request, options)
-      reply = client_for(rpc.target).request(outbound(rpc, request), options.to_h)
-      reply_metadata = reply.metadata.to_h
+    # mesh_metadata is the reply's metadata without keys that start with
+    # OPTION_PREFIX. Raises MeshError for a reply carrying Grpc-Status, or
+    # INTERNAL when either payload does not decode; either error's
+    # mesh_metadata is the same reply metadata.
+    def self.request(rpc, request)
+      message, options = outbound(rpc, request)
+      reply = client_for(rpc.target).request(message, options)
+      reply_metadata = Wire.without_options(reply.metadata)
       begin
         if reply_metadata.key?(Wire::GRPC_STATUS_KEY)
           raise MeshError.from_proto(decode(Google::Rpc::Status, reply.payload))
@@ -46,8 +50,9 @@ module GrpcServiceMesh
     end
 
     # Publishes +request+ to a topic. Returns nil.
-    def self.publish(rpc, request, options)
-      client_for(rpc.target).publish(outbound(rpc, request), options.to_h)
+    def self.publish(rpc, request)
+      message, options = outbound(rpc, request)
+      client_for(rpc.target).publish(message, options)
       nil
     end
 
@@ -55,10 +60,13 @@ module GrpcServiceMesh
       GrpcServiceMesh.transport_router.client(target.metadata["transport"])
     end
 
+    # The message for +request+ and the transport options, split from the
+    # request's mesh_metadata.
     def self.outbound(rpc, request)
       raise TypeError, "#{rpc.name} takes a #{rpc.input}, got #{request.class}" unless request.is_a?(rpc.input)
 
-      ServiceMesh::Message.new(target: rpc.target, metadata: Wire.metadata(request.mesh_metadata), payload: request.to_proto)
+      metadata, options = Wire.split_options(request.mesh_metadata)
+      [ServiceMesh::Message.new(target: rpc.target, metadata: Wire.metadata(metadata), payload: request.to_proto), options]
     end
 
     def self.decode(klass, payload)

@@ -5,7 +5,8 @@ module GrpcServiceMesh
   # rpcs; the application subclasses that and defines a method per rpc it
   # serves, taking the decoded request, whose mesh_metadata is the inbound
   # message metadata. A route method returns the response; the response's
-  # mesh_metadata is the reply's metadata.
+  # mesh_metadata, without keys that start with OPTION_PREFIX, is the reply's
+  # metadata. The same holds for a raised MeshError.
   class RPCService
     extend RpcDSL
 
@@ -35,7 +36,7 @@ module GrpcServiceMesh
           raise TypeError, "#{rpc.name} returned #{response.class}, expected #{rpc.output}"
         end
 
-        metadata = Wire.metadata(response.mesh_metadata.except(Wire::GRPC_STATUS_KEY))
+        metadata = Wire.metadata(Wire.without_options(response.mesh_metadata).except(Wire::GRPC_STATUS_KEY))
         ServiceMesh::Message.new(target: message.target, metadata: metadata, payload: response.to_proto)
       rescue MeshError => e
         status_reply(message, e)
@@ -59,7 +60,7 @@ module GrpcServiceMesh
     end
 
     def status_reply(message, error)
-      ServiceMesh::Message.new(target: message.target, metadata: Wire.status_metadata(error, error.mesh_metadata), payload: error.proto.to_proto)
+      ServiceMesh::Message.new(target: message.target, metadata: Wire.status_metadata(error, Wire.without_options(error.mesh_metadata)), payload: error.proto.to_proto)
     end
   end
 end
