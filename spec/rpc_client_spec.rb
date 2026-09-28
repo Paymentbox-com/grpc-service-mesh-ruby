@@ -12,23 +12,32 @@ RSpec.describe GrpcServiceMesh::RPCClient do
     ServiceMesh::Message.new(target: Shop::OrderTargets::PLACE, metadata: metadata, payload: payload)
   end
 
-  describe "a route method" do
-    it "sends the encoded request with metadata and options to the target's transport and decodes the reply" do
-      response = Shop::Order.new(id: "O-1")
-      client = transport_client { reply({"Content-Type" => "application/x-protobuf"}, response.to_proto) }
+  def order(metadata = {}, **fields)
+    order = Shop::Order.new(**fields)
+    order.mesh_metadata = metadata
+    order
+  end
 
-      result = Shop::OrderClient.place(Shop::Order.new(id: "o-1"), metadata: {"Request-Id" => "r1"}, options: {"request_timeout" => "2"})
+  describe "a route method" do
+    it "sends the encoded request with its metadata and the options to the target's transport and decodes the reply" do
+      response = Shop::Order.new(id: "O-1")
+      client = transport_client { reply({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"}, response.to_proto) }
+      request = order({"Request-Id" => "r1"}, id: "o-1")
+
+      result = Shop::OrderClient.place(request, options: {"request_timeout" => "2"})
 
       expect(result).to eq(response)
+      expect(result.mesh_metadata).to eq({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"})
       message, options = client.requests.first
       expect(client.requests.size).to eq(1)
       expect(message.target).to eq(Shop::OrderTargets::PLACE)
       expect(message.metadata).to eq({"Request-Id" => "r1", "Content-Type" => "application/x-protobuf"})
       expect(Shop::Order.decode(message.payload)).to eq(Shop::Order.new(id: "o-1"))
       expect(options).to eq({"request_timeout" => "2"})
+      expect(request.mesh_metadata).to eq({"Request-Id" => "r1"})
     end
 
-    it "sends Content-Type with no caller metadata or options" do
+    it "sends Content-Type with no request metadata or options" do
       client = transport_client { reply({}, Shop::Order.new.to_proto) }
 
       Shop::OrderClient.place(Shop::Order.new)
@@ -38,58 +47,26 @@ RSpec.describe GrpcServiceMesh::RPCClient do
       expect(options).to eq({})
     end
 
-    it "raises the MeshError a reply with Grpc-Status carries" do
+    it "raises the MeshError a reply with Grpc-Status carries, with the reply's metadata" do
       info = Google::Rpc::ErrorInfo.new(reason: "ORDER_CANCELLED", domain: "shop")
       status = Google::Rpc::Status.new(code: 5, message: "no such order", details: [Google::Protobuf::Any.pack(info)])
-      transport_client { reply({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"}, status.to_proto) }
+      transport_client { reply({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"}, status.to_proto) }
 
-      expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::MeshError) do |error|
+      expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::NotFoundError) do |error|
         expect(error.code).to eq(:NOT_FOUND)
         expect(error.message).to eq("no such order")
         expect(error.details.map { |d| d.unpack(Google::Rpc::ErrorInfo) }).to eq([info])
+        expect(error.mesh_metadata).to eq({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"})
       end
     end
 
-    it "replaces the contents of reply_metadata with a successful reply's metadata" do
-      transport_client { reply({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"}, Shop::Order.new.to_proto) }
-      reply_metadata = {"Before" => "call"}
-
-      Shop::OrderClient.place(Shop::Order.new, reply_metadata: reply_metadata)
-
-      expect(reply_metadata).to eq({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"})
-    end
-
-    it "replaces the contents of reply_metadata with a MeshError reply's metadata" do
-      status = Google::Rpc::Status.new(code: 5, message: "no such order")
-      transport_client { reply({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"}, status.to_proto) }
-      reply_metadata = {}
-
-      expect { Shop::OrderClient.place(Shop::Order.new, reply_metadata: reply_metadata) }.to raise_error(GrpcServiceMesh::NotFoundError)
-      expect(reply_metadata).to eq({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"})
-    end
-
-    it "leaves reply_metadata unchanged on a transport error" do
-      transport_client { raise MemoryTransport::NoReceiver, "shop.OrderService.Place" }
-      reply_metadata = {"Before" => "call"}
-
-      expect { Shop::OrderClient.place(Shop::Order.new, reply_metadata: reply_metadata) }.to raise_error(MemoryTransport::NoReceiver)
-      expect(reply_metadata).to eq({"Before" => "call"})
-    end
-
-    it "rejects a reply_metadata that is not a Hash before sending" do
-      client = transport_client { raise "not reached" }
-
-      expect { Shop::OrderClient.place(Shop::Order.new, reply_metadata: []) }
-        .to raise_error(TypeError, "reply_metadata: takes a Hash, got Array")
-      expect(client.requests).to eq([])
-    end
-
-    it "raises INTERNAL when the response does not decode" do
-      transport_client { reply({"Content-Type" => "application/x-protobuf"}, "\x80".b) }
+    it "raises INTERNAL with the reply's metadata when the response does not decode" do
+      transport_client { reply({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"}, "\x80".b) }
 
       expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::MeshError) do |error|
         expect(error.code).to eq(:INTERNAL)
         expect(error.message).to include("shop.Order")
+        expect(error.mesh_metadata).to eq({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"})
       end
     end
 
@@ -122,10 +99,10 @@ RSpec.describe GrpcServiceMesh::RPCClient do
   end
 
   describe "a topic method" do
-    it "publishes the encoded request with metadata and options and returns nil" do
+    it "publishes the encoded request with its metadata and the options and returns nil" do
       client = transport_client { nil }
 
-      result = Shop::OrderClient.placed(Shop::Order.new(id: "o-1"), metadata: {"Event-Id" => "e1"}, options: {"flush" => "1"})
+      result = Shop::OrderClient.placed(order({"Event-Id" => "e1"}, id: "o-1"), options: {"flush" => "1"})
 
       expect(result).to be_nil
       message, options = client.publishes.first

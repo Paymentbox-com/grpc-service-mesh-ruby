@@ -19,7 +19,7 @@ RSpec.describe GrpcServiceMesh::RPCService do
 
     it "binds only the route a subclass defines" do
       service = Class.new(Shop::OrderService) do
-        def place(request, metadata) = request
+        def place(request) = request
       end.new
 
       expect(service.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
@@ -28,7 +28,7 @@ RSpec.describe GrpcServiceMesh::RPCService do
 
     it "binds only the topic a subclass defines" do
       service = Class.new(Shop::OrderService) do
-        def placed(request, metadata)
+        def placed(request)
         end
       end.new
 
@@ -38,11 +38,11 @@ RSpec.describe GrpcServiceMesh::RPCService do
   end
 
   describe "an endpoint handler" do
-    it "decodes the request, passes the inbound metadata, and encodes the response with Content-Type" do
+    it "decodes the request with the inbound metadata on it and encodes the response with Content-Type" do
       seen = nil
       service = Class.new(Shop::OrderService) do
-        define_method(:place) do |request, metadata|
-          seen = [request, metadata]
+        define_method(:place) do |request|
+          seen = [request, request.mesh_metadata]
           Shop::Order.new(id: request.id.upcase, item: "found")
         end
       end.new
@@ -56,10 +56,52 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(Shop::Order.decode(reply.payload)).to eq(Shop::Order.new(id: "O-1", item: "found"))
     end
 
+    it "replies with the metadata set on the response" do
+      service = Class.new(Shop::OrderService) do
+        def place(request)
+          order = Shop::Order.new(id: request.id)
+          order.mesh_metadata = {"Request-Id" => "r1", "Region" => "west"}
+          order
+        end
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new(id: "o-1").to_proto))
+
+      expect(reply.metadata).to eq({"Request-Id" => "r1", "Region" => "west", "Content-Type" => "application/x-protobuf"})
+      expect(Shop::Order.decode(reply.payload)).to eq(Shop::Order.new(id: "o-1"))
+    end
+
+    it "replies with the metadata of a frozen response" do
+      order = Shop::Order.new(id: "o-1")
+      order.mesh_metadata = {"Request-Id" => "r1"}
+      order.freeze
+      service = Class.new(Shop::OrderService) do
+        define_method(:place) { |_request| order }
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(reply.metadata).to eq({"Request-Id" => "r1", "Content-Type" => "application/x-protobuf"})
+      expect(Shop::Order.decode(reply.payload)).to eq(Shop::Order.new(id: "o-1"))
+    end
+
+    it "overwrites Content-Type and drops Grpc-Status set on a successful response" do
+      service = Class.new(Shop::OrderService) do
+        def place(request)
+          request.mesh_metadata = {"Content-Type" => "text/plain", "Grpc-Status" => "5"}
+          request
+        end
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf"})
+    end
+
     it "replies with the encoded Status and Grpc-Status when the handler raises a MeshError" do
       info = Google::Rpc::ErrorInfo.new(reason: "ORDER_CANCELLED", domain: "shop")
       service = Class.new(Shop::OrderService) do
-        define_method(:place) { |_request, _metadata| raise GrpcServiceMesh::MeshError.new(:NOT_FOUND, "no such order", info) }
+        define_method(:place) { |_request| raise GrpcServiceMesh::MeshError.new(:NOT_FOUND, "no such order", info) }
       end.new
 
       reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
@@ -71,9 +113,33 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(status.details.map { |d| d.unpack(Google::Rpc::ErrorInfo) }).to eq([info])
     end
 
+    it "replies to a MeshError with the error's metadata" do
+      service = Class.new(Shop::OrderService) do
+        def place(_request)
+          raise GrpcServiceMesh::NotFoundError.new("no such order", mesh_metadata: {"Retry-After" => "30"})
+        end
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(reply.metadata).to eq({"Retry-After" => "30", "Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"})
+    end
+
+    it "overwrites Content-Type and Grpc-Status set on a MeshError" do
+      service = Class.new(Shop::OrderService) do
+        def place(_request)
+          raise GrpcServiceMesh::NotFoundError.new("no such order", mesh_metadata: {"Content-Type" => "text/plain", "Grpc-Status" => "0"})
+        end
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"})
+    end
+
     it "reports any other exception as UNKNOWN with its message" do
       service = Class.new(Shop::OrderService) do
-        def place(_request, _metadata) = raise("store is down")
+        def place(_request) = raise("store is down")
       end.new
 
       reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
@@ -84,7 +150,7 @@ RSpec.describe GrpcServiceMesh::RPCService do
 
     it "reports a response of the wrong class as UNKNOWN" do
       service = Class.new(Shop::OrderService) do
-        def place(_request, _metadata) = Google::Rpc::Status.new
+        def place(_request) = Google::Rpc::Status.new
       end.new
 
       reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
@@ -93,78 +159,10 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(status_of(reply).message).to eq("place returned Google::Rpc::Status, expected Shop::Order")
     end
 
-    it "replies with the reply metadata the handler sets, later keys overwriting earlier ones" do
-      service = Class.new(Shop::OrderService) do
-        def place(request, _metadata)
-          GrpcServiceMesh.set_reply_metadata("Request-Id" => "r1", "Region" => "east")
-          GrpcServiceMesh.set_reply_metadata("Region" => "west")
-          request
-        end
-      end.new
-
-      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
-
-      expect(reply.metadata).to eq({"Request-Id" => "r1", "Region" => "west", "Content-Type" => "application/x-protobuf"})
-    end
-
-    it "replies to a MeshError with the reply metadata the handler sets" do
-      service = Class.new(Shop::OrderService) do
-        def place(_request, _metadata)
-          GrpcServiceMesh.set_reply_metadata("Retry-After" => "30")
-          raise GrpcServiceMesh::NotFoundError.new("no such order")
-        end
-      end.new
-
-      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
-
-      expect(reply.metadata).to eq({"Retry-After" => "30", "Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"})
-    end
-
-    it "overwrites Content-Type and Grpc-Status the handler sets on a MeshError reply" do
-      service = Class.new(Shop::OrderService) do
-        def place(_request, _metadata)
-          GrpcServiceMesh.set_reply_metadata("Content-Type" => "text/plain", "Grpc-Status" => "0")
-          raise GrpcServiceMesh::NotFoundError.new("no such order")
-        end
-      end.new
-
-      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
-
-      expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5"})
-    end
-
-    it "overwrites Content-Type and drops Grpc-Status the handler sets on a successful reply" do
-      service = Class.new(Shop::OrderService) do
-        def place(request, _metadata)
-          GrpcServiceMesh.set_reply_metadata("Content-Type" => "text/plain", "Grpc-Status" => "5")
-          request
-        end
-      end.new
-
-      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
-
-      expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf"})
-    end
-
-    it "starts each call with no reply metadata" do
-      service = Class.new(Shop::OrderService) do
-        def place(request, _metadata)
-          GrpcServiceMesh.set_reply_metadata("Request-Id" => request.id) unless request.id.empty?
-          request
-        end
-      end.new
-      handler = service.endpoints.first.handler
-      handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new(id: "o-1").to_proto))
-
-      reply = handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
-
-      expect(reply.metadata).to eq({"Content-Type" => "application/x-protobuf"})
-    end
-
     it "reports a request that does not decode as UNKNOWN without calling the handler" do
       called = false
       service = Class.new(Shop::OrderService) do
-        define_method(:place) { |request, _metadata| called = true and request }
+        define_method(:place) { |request| called = true and request }
       end.new
 
       reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, "\x80".b))
@@ -176,10 +174,10 @@ RSpec.describe GrpcServiceMesh::RPCService do
   end
 
   describe "a subscriber handler" do
-    it "decodes the request, passes the inbound metadata, and returns nil" do
+    it "decodes the request with the inbound metadata on it and returns nil" do
       seen = nil
       service = Class.new(Shop::OrderService) do
-        define_method(:placed) { |request, metadata| seen = [request, metadata] }
+        define_method(:placed) { |request| seen = [request, request.mesh_metadata] }
       end.new
       metadata = {"Content-Type" => "application/x-protobuf", "Event-Id" => "e1"}
 
@@ -189,19 +187,9 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(seen).to eq([Shop::Order.new(id: "o-1"), metadata])
     end
 
-    it "ignores reply metadata the handler sets" do
-      service = Class.new(Shop::OrderService) do
-        def placed(_request, _metadata) = GrpcServiceMesh.set_reply_metadata("Request-Id" => "r1")
-      end.new
-
-      result = service.subscribers.first.handler.call(inbound(Shop::OrderTargets::PLACED, Shop::Order.new.to_proto))
-
-      expect(result).to be_nil
-    end
-
     it "lets an exception from the handler propagate unchanged" do
       service = Class.new(Shop::OrderService) do
-        def placed(_request, _metadata) = raise(IOError, "audit log closed")
+        def placed(_request) = raise(IOError, "audit log closed")
       end.new
 
       expect { service.subscribers.first.handler.call(inbound(Shop::OrderTargets::PLACED, Shop::Order.new.to_proto)) }

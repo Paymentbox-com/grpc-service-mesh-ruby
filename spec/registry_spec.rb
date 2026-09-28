@@ -12,15 +12,15 @@ RSpec.describe GrpcServiceMesh::Registry do
     target = billing_target
     Class.new(GrpcServiceMesh::RPCService) do
       rpc :create, target: target, input: Shop::Order, output: Shop::Order, kind: :route
-      def create(request, metadata) = request
+      def create(request) = request
     end
   end
 
   let(:orders) do
     Class.new(Shop::OrderService) do
-      def place(request, metadata) = request
+      def place(request) = request
 
-      def placed(request, metadata)
+      def placed(request)
       end
     end
   end

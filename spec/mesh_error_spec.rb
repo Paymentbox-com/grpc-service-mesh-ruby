@@ -10,6 +10,37 @@ RSpec.describe GrpcServiceMesh::MeshError do
     expect(error.to_s).to eq("no such order")
     expect(error.details).to eq([])
     expect(error.proto).to eq(Google::Rpc::Status.new(code: 5, message: "no such order"))
+    expect(error.mesh_metadata).to eq({})
+  end
+
+  it "carries the metadata given on construction through to the subclass" do
+    error = described_class.new(:NOT_FOUND, "no such order", mesh_metadata: {"Retry-After" => "30"})
+
+    expect(error).to be_an_instance_of(GrpcServiceMesh::NotFoundError)
+    expect(error.mesh_metadata).to eq({"Retry-After" => "30"})
+  end
+
+  it "builds UNKNOWN from a message and details with no code" do
+    info = Google::Rpc::ErrorInfo.new(reason: "STORE_DOWN")
+
+    error = described_class.new("store is down", info)
+
+    expect(error).to be_an_instance_of(GrpcServiceMesh::UnknownError)
+    expect(error.message).to eq("store is down")
+    expect(error.details[0].unpack(Google::Rpc::ErrorInfo)).to eq(info)
+  end
+
+  it "is raised as UNKNOWN from a class and a message" do
+    expect { raise described_class, "store is down" }.to raise_error(GrpcServiceMesh::UnknownError, "store is down") do |error|
+      expect(error.code).to eq(:UNKNOWN)
+    end
+  end
+
+  it "raises a subclass from the class and a message" do
+    expect { raise GrpcServiceMesh::NotFoundError, "no such order" }.to raise_error(GrpcServiceMesh::NotFoundError, "no such order") do |error|
+      expect(error.code).to eq(:NOT_FOUND)
+      expect(error.details).to eq([])
+    end
   end
 
   it "builds the subclass for a named code" do
@@ -79,8 +110,9 @@ RSpec.describe GrpcServiceMesh::MeshError do
     expect { described_class.new(:MISSING, "x") }.to raise_error(ArgumentError, /MISSING/)
   end
 
-  it "rejects a code that is neither a name nor a number" do
-    expect { described_class.new("5", "x") }.to raise_error(ArgumentError, /"5"/)
+  it "rejects a detail that is not a protobuf message" do
+    expect { described_class.new(:NOT_FOUND, "no such order", "o-1") }
+      .to raise_error(TypeError, "a detail must be a protobuf message, got String")
   end
 
   it "packs detail messages and round-trips them through proto and from_proto" do

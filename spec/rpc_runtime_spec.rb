@@ -9,16 +9,16 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
 
   it "builds the transport runtime with its deployment group's bindings and the group in the config" do
     orders = Class.new(Shop::OrderService) do
-      def place(request, metadata) = request
+      def place(request) = request
 
-      def placed(request, metadata)
+      def placed(request)
       end
     end
     audit_target = ServiceMesh::Target.new(segments: %w[audit AuditService Record], kind: :topic,
       metadata: {"deployment_group" => "audit", "transport" => "nats"})
     audit = Class.new(GrpcServiceMesh::RPCService) do
       rpc :record, target: audit_target, input: Shop::Order, kind: :topic
-      def record(request, metadata)
+      def record(request)
       end
     end
     GrpcServiceMesh.register(orders.new)
@@ -98,9 +98,9 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
   describe "with bindings given in place of the registry's" do
     let(:orders) do
       Class.new(Shop::OrderService) do
-        def place(request, metadata) = request
+        def place(request) = request
 
-        def placed(request, metadata)
+        def placed(request)
         end
       end
     end

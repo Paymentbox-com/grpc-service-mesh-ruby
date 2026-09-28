@@ -21,7 +21,7 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.11.0"
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.12.0"
 gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
 gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
@@ -37,6 +37,25 @@ The examples use the generated code shown under Generated code: the
 `Shop::OrderService`, `Shop::OrderClient`, and `Shop::OrderTargets` produced
 from the specification's `examples/shop/order.proto`, and `ServiceMaps::NATS`
 produced from every target on the `nats` transport.
+
+### Message metadata
+
+Message metadata travels on the message objects. `GrpcServiceMesh::Metadata`
+is a module the generated code includes into every message class an rpc takes
+or returns. It adds two methods.
+
+| method | value |
+|---|---|
+| `#mesh_metadata` | the metadata Hash set on the object, or a frozen empty Hash when none is set |
+| `#mesh_metadata=(hash)` | sets the metadata; `nil` sets none, and a value that is not a Hash raises `TypeError` |
+
+The library sets `mesh_metadata` on the objects it builds, the decoded request
+a handler receives and the decoded response or `MeshError` a caller receives.
+It reads `mesh_metadata` from the objects the application gives it, the
+request a caller sends and the response a handler returns, and never writes to
+them, so a handler may return a shared or frozen object. `MeshError` includes
+the module too. A message class that declares a field named `mesh_metadata`
+cannot carry metadata, and the generator rejects it.
 
 ### Configuring the TransportRouter at boot
 
@@ -70,9 +89,9 @@ process that serves, the `RPCRuntime`'s `stop` closes the client.
 
 The generated `Shop::OrderService` declares the rpcs of the proto service and
 serves nothing itself. The application subclasses it and defines a method for
-each rpc it serves. The method takes the decoded request and the inbound
-message metadata Hash. A route method returns the response message; a topic
-method's return value is ignored.
+each rpc it serves. The method takes one argument, the decoded request, whose
+`mesh_metadata` is the inbound message metadata. A route method returns the
+response message; a topic method's return value is ignored.
 
 ```ruby
 class Orders < Shop::OrderService
@@ -80,14 +99,14 @@ class Orders < Shop::OrderService
     @store = store
   end
 
-  def place(request, metadata)
+  def place(request)
     @store.in_stock?(request.item) or
       raise GrpcServiceMesh::NotFoundError.new("no item #{request.item}",
-        Google::Rpc::ErrorInfo.new(reason: "ITEM_MISSING", domain: "shop", metadata: {"request_id" => metadata["Request-Id"].to_s}))
+        Google::Rpc::ErrorInfo.new(reason: "ITEM_MISSING", domain: "shop", metadata: {"request_id" => request.mesh_metadata["Request-Id"].to_s}))
     Shop::Order.new(id: @store.place(request.item), item: request.item)
   end
 
-  def placed(request, metadata)
+  def placed(request)
     @store.record(request)
   end
 end
@@ -103,19 +122,21 @@ registrations of one target hand the transport two bindings for it.
 
 #### Reply metadata
 
-A route method sets metadata on its reply with
-`GrpcServiceMesh.set_reply_metadata`. A later call adds keys and overwrites
-the ones already set. The reply carries the metadata on success and on a
-`MeshError` reply, including the `UNKNOWN` reply for any other exception.
-The library writes `Content-Type` and `Grpc-Status` after the application's
-values, so its own values win, and a successful reply carries no
-`Grpc-Status`. Outside a route method, such as in a topic method,
-`set_reply_metadata` has no effect.
+The reply's metadata is the `mesh_metadata` of the response a route method
+returns. When the method raises a `MeshError`, the reply's metadata is the
+error's `mesh_metadata`, which the error takes on construction as
+`mesh_metadata:` or through `mesh_metadata=`. The `UNKNOWN` reply for any
+other exception carries only the library's keys. The library writes
+`Content-Type` and `Grpc-Status` over the application's values, so its own
+values win, and a successful reply carries no `Grpc-Status`.
 
 ```ruby
-def place(request, metadata)
-  GrpcServiceMesh.set_reply_metadata("Request-Id" => metadata["Request-Id"].to_s)
-  Shop::Order.new(id: @store.place(request.item), item: request.item)
+def place(request)
+  @store.in_stock?(request.item) or
+    raise GrpcServiceMesh::NotFoundError.new("no item #{request.item}", mesh_metadata: {"Retry-After" => "30"})
+  order = Shop::Order.new(id: @store.place(request.item), item: request.item)
+  order.mesh_metadata = {"Request-Id" => request.mesh_metadata["Request-Id"].to_s}
+  order
 end
 ```
 
@@ -166,19 +187,18 @@ treats a subscriber handler that raises.
 
 ### Calling a service
 
-Generated client methods are class methods taking the request message and two
-keywords. `metadata:` is added to the outbound message's metadata and
-`options:` is the per-call Hash the transport's `request` or `publish` takes.
-Both default to empty. A route method also takes `reply_metadata:`, described
-below. Every call resolves the transport's `Client` through
-the router, so the same code runs in a process that serves and in one that
-only calls.
+Generated client methods are class methods, `name(request, options: {})`.
+The outbound message's metadata is the request's `mesh_metadata`, which the
+call reads and leaves unchanged. `options:` is the per-call Hash the
+transport's `request` or `publish` takes. Every call resolves the transport's
+`Client` through the router, so the same code runs in a process that serves
+and in one that only calls.
 
 ```ruby
+request = Shop::Order.new(item: "book")
+request.mesh_metadata = {"Request-Id" => SecureRandom.uuid}
 begin
-  order = Shop::OrderClient.place(Shop::Order.new(item: "book"),
-    metadata: {"Request-Id" => SecureRandom.uuid},
-    options: {"request_timeout" => "2"})
+  order = Shop::OrderClient.place(request, options: {"request_timeout" => "2"})
 rescue GrpcServiceMesh::NotFoundError => e
   e.message                # "no item book"
   info = e.details.find { |d| d.is(Google::Rpc::ErrorInfo) }&.unpack(Google::Rpc::ErrorInfo)
@@ -188,7 +208,9 @@ rescue NATS::Timeout, NATS::IO::NoRespondersError
   # transport errors pass through unchanged
 end
 
-Shop::OrderClient.placed(Shop::Order.new(id: "o-1", item: "book"), metadata: {"Event-Id" => "e1"})
+event = Shop::Order.new(id: "o-1", item: "book")
+event.mesh_metadata = {"Event-Id" => "e1"}
+Shop::OrderClient.placed(event)
 ```
 
 A route method returns the decoded response. A topic method returns `nil`. A
@@ -197,16 +219,15 @@ before anything is sent.
 
 #### Reply metadata
 
-A route method given a Hash as `reply_metadata:` replaces its contents with
-the reply's metadata, on success and on a `MeshError` reply. An error before a
-reply arrives, such as a transport error, leaves it unchanged. A value that is
-neither `nil`, the default, nor a Hash raises `TypeError` before anything is
-sent.
+The response a route method returns has `mesh_metadata` set to the reply's
+metadata. A `MeshError` raised from a reply, including the `INTERNAL` error for
+a payload that does not decode, has `mesh_metadata` set to that reply's
+metadata. An error before a reply arrives, such as a transport error, carries
+none.
 
 ```ruby
-reply_metadata = {}
-order = Shop::OrderClient.place(Shop::Order.new(item: "book"), reply_metadata: reply_metadata)
-reply_metadata["Request-Id"]
+order = Shop::OrderClient.place(Shop::Order.new(item: "book"))
+order.mesh_metadata["Request-Id"]
 ```
 
 ## Errors
@@ -216,25 +237,31 @@ reply_metadata["Request-Id"]
 
 | member | value |
 |---|---|
-| `MeshError.new(code, message, *details)` | `code` is a `Google::Rpc::Code` name such as `:NOT_FOUND` or its number such as `5`; `details` are protobuf messages, packed into `Google::Protobuf::Any`, or `Any` values already packed |
+| `MeshError.new(code, message, *details, mesh_metadata: {})` | `code` is a `Google::Rpc::Code` name such as `:NOT_FOUND` or its number such as `5`; `details` are protobuf messages, packed into `Google::Protobuf::Any`, or `Any` values already packed; `mesh_metadata:` is the metadata of the reply that reports the error |
+| `MeshError.new(message, *details, mesh_metadata: {})` | the same with code `UNKNOWN` |
 | `MeshError.from_proto(status)` | wraps a `Google::Rpc::Status` |
 | `#code` | the `Google::Rpc::Code` name, or the number when it has no name |
 | `#message` | the text, also what `to_s` returns |
 | `#details` | an Array of `Google::Protobuf::Any`; unpack with `any.unpack(klass)`, test with `any.is(klass)` |
 | `#proto` | the `Google::Rpc::Status` |
+| `#mesh_metadata`, `#mesh_metadata=` | the reply metadata, from `GrpcServiceMesh::Metadata` |
 
 `MeshError` has one subclass per `Google::Rpc::Code` other than `OK`:
 `NotFoundError`, `InvalidArgumentError`, `PermissionDeniedError`,
 `UnauthenticatedError`, `FailedPreconditionError`, `InternalError`,
 `UnavailableError`, and the rest, each named after its code. A subclass is
-built from a message and details, `GrpcServiceMesh::NotFoundError.new("no
-such order", info)`, and fixes its own code. `MeshError.new` and
+built from a message, details, and `mesh_metadata:`,
+`GrpcServiceMesh::NotFoundError.new("no such order", info)`, and fixes its own
+code. `raise GrpcServiceMesh::NotFoundError, "no such order"` builds the same
+error with no details, and `raise GrpcServiceMesh::MeshError, "store is down"`
+raises an `UnknownError`. `MeshError.new` and
 `MeshError.from_proto` return the subclass for the code they are given, so an
 error decoded off the wire is rescued by its class. A code with no name stays
 a plain `MeshError`, and `rescue GrpcServiceMesh::MeshError` catches every
 code.
 
-A name that is not a `Google::Rpc::Code` raises `ArgumentError`.
+A name that is not a `Google::Rpc::Code` raises `ArgumentError`, and a detail
+that is not a protobuf message raises `TypeError`.
 
 **A route handler that raises `MeshError`** produces a normal reply whose
 payload is the encoded `Status` and whose metadata carries `Grpc-Status` set
@@ -263,7 +290,7 @@ The errors this library raises for misuse of its own contract descend from
 ## Wire format
 
 Every message this library sends carries metadata
-`Content-Type: application/x-protobuf`, merged over the caller's metadata. A
+`Content-Type: application/x-protobuf`, merged over the application's metadata. A
 reply that reports a `MeshError` also carries `Grpc-Status`. Payloads are the
 messages' binary encodings.
 
@@ -275,12 +302,12 @@ messages' binary encodings.
 | `GrpcServiceMesh.add_transport(name, client)` | shortcut for `transport_router.add` |
 | `GrpcServiceMesh.registry` | the process `Registry` |
 | `GrpcServiceMesh.register(service)` | shortcut for `registry.register` |
-| `GrpcServiceMesh.set_reply_metadata(metadata)` | merges `metadata` into the reply of the running route method |
 | `GrpcServiceMesh::TransportRouter` | `#add(name, client)`, `#client(name)`, `#names`, `#close`; holds one client per transport name |
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
 | `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:, runtime:, config: {}, endpoints: nil, subscribers: nil)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#t_runtime`, `#transport`, `#deployment_group` |
-| `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers` |
-| `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `.rpcs`; a route method takes `metadata:`, `options:`, and `reply_metadata:`, a topic method `metadata:` and `options:` |
+| `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers`; a handler method takes `(request)` |
+| `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `name(request, options: {})`, `.rpcs` |
+| `GrpcServiceMesh::Metadata` | module adding `#mesh_metadata` and `#mesh_metadata=` to a message class |
 | `GrpcServiceMesh::Rpc` | a `Data` with `name`, `target`, `input`, `output`, `kind`, `owner`, `#route?` |
 | `GrpcServiceMesh::MeshError` | above |
 | `GrpcServiceMesh::Wire` | `CONTENT_TYPE_KEY`, `CONTENT_TYPE`, `GRPC_STATUS_KEY` |
@@ -292,7 +319,7 @@ The module-level accessors build the router and the registry on first use.
 The generator is `grpc-service-mesh-gen` from the specification repository:
 
 ```sh
-go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.6.0
+go install github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@v0.7.0
 grpc-service-mesh-gen --definitions definitions --go_out=lib/go --ruby_out=lib/ruby
 ```
 
@@ -301,8 +328,10 @@ puts that directory on every `protoc` run.
 
 It writes one `<dir>_grpcmesh.rb` per directory that holds a
 service, beside the `*_pb.rb` files protoc writes, and one `service_maps.rb`
-at the output root. For `examples/shop/order.proto` and `deployment.proto`
-from the specification, `shop/shop_grpcmesh.rb` is:
+at the output root. After the service classes, it includes
+`GrpcServiceMesh::Metadata` into every message class an rpc in the file takes
+or returns. For `examples/shop/order.proto` and `deployment.proto` from the
+specification, `shop/shop_grpcmesh.rb` is:
 
 ```ruby
 # frozen_string_literal: true
@@ -313,6 +342,7 @@ from the specification, `shop/shop_grpcmesh.rb` is:
 # deployment group: shop
 
 require "grpc_service_mesh"
+require "google/protobuf/empty_pb"
 require_relative "order_pb"
 
 module Shop
@@ -339,6 +369,9 @@ module Shop
     rpc :placed, target: OrderTargets::PLACED, input: Shop::Order, kind: :topic
   end
 end
+
+::Google::Protobuf::Empty.include(GrpcServiceMesh::Metadata)
+::Shop::Order.include(GrpcServiceMesh::Metadata)
 ```
 
 and `service_maps.rb` is:
@@ -388,12 +421,14 @@ On an `RPCService` subclass the declaration records the rpc; `#endpoints`
 returns a `ServiceMesh::Endpoint` for each route whose method the instance's
 class defines at or below the declaring class, and `#subscribers` a
 `ServiceMesh::Subscriber` for each such topic. The handler in each decodes
-the payload with `input.decode`, calls the method with the message and its
-metadata Hash, and encodes the response with `to_proto`.
+the payload with `input.decode`, sets the decoded message's `mesh_metadata` to
+the inbound metadata, calls the method with it, and encodes the response with
+`to_proto`, sending the response's `mesh_metadata` as the reply's metadata.
 
 On an `RPCClient` subclass the declaration defines the class method
-`name(request, metadata: {}, options: {})`. A route method calls the
-transport client's `request(message, options)` and decodes the reply; a topic
+`name(request, options: {})`. A route method calls the transport client's
+`request(message, options)` and decodes the reply, setting the response's
+`mesh_metadata` to the reply's metadata; a topic
 method calls `publish(message, options)` and returns `nil`. The transport is
 `target.metadata["transport"]`, resolved through
 `GrpcServiceMesh.transport_router.client` on every call.

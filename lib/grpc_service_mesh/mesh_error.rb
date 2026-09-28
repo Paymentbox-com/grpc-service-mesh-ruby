@@ -8,18 +8,29 @@ require "google/rpc/error_details_pb"
 
 module GrpcServiceMesh
   # The application error. A ROUTE handler raises it; the caller rescues it.
-  # It wraps a google.rpc.Status.
+  # It wraps a google.rpc.Status and carries the message metadata of the
+  # reply that reports it.
   class MeshError < StandardError
+    include Metadata
+
     attr_reader :proto
 
-    # Returns the subclass for +code+ when one exists; a subclass called
-    # directly builds itself.
-    def self.new(code, message, *details)
+    # MeshError.new(code, message, *details, mesh_metadata: {}) or, with code
+    # UNKNOWN, MeshError.new(message, *details, mesh_metadata: {}). Returns
+    # the subclass for the code when one exists; a subclass called directly
+    # takes (message, *details, mesh_metadata: {}) and builds itself.
+    def self.new(*args, mesh_metadata: {})
+      args.unshift(:UNKNOWN) unless args.first.is_a?(Symbol) || args.first.is_a?(Integer)
       if equal?(MeshError)
-        klass = BY_CODE[code_number(code)]
-        return klass.new(message, *details) if klass
+        klass = BY_CODE[code_number(args.first)]
+        return klass.new(*args.drop(1), mesh_metadata: mesh_metadata) if klass
       end
       super
+    end
+
+    # What +raise Klass, "msg"+ calls; builds the error as new does.
+    def self.exception(*args, **kwargs)
+      new(*args, **kwargs)
     end
 
     # Wraps an existing Google::Rpc::Status.
@@ -29,14 +40,16 @@ module GrpcServiceMesh
 
     # +code+ is a Google::Rpc::Code name (:NOT_FOUND) or number (5).
     # +details+ are protobuf messages, packed into Google::Protobuf::Any,
-    # or Any values already packed.
-    def initialize(code, message, *details)
+    # or Any values already packed. +mesh_metadata+ is the metadata the
+    # error reply carries.
+    def initialize(code, message, *details, mesh_metadata: {})
       text = message.to_s
       @proto = Google::Rpc::Status.new(
         code: self.class.code_number(code),
         message: text,
-        details: details.map { |d| d.is_a?(Google::Protobuf::Any) ? d : Google::Protobuf::Any.pack(d) }
+        details: details.map { |d| pack(d) }
       )
+      self.mesh_metadata = mesh_metadata
       super(text)
     end
 
@@ -48,6 +61,15 @@ module GrpcServiceMesh
     # The wrapped Status's details, as Google::Protobuf::Any values.
     def details
       @proto.details.to_a
+    end
+
+    private def pack(detail)
+      return detail if detail.is_a?(Google::Protobuf::Any)
+      unless detail.class.respond_to?(:descriptor)
+        raise TypeError, "a detail must be a protobuf message, got #{detail.class}"
+      end
+
+      Google::Protobuf::Any.pack(detail)
     end
 
     def self.code_number(code)
@@ -84,8 +106,8 @@ module GrpcServiceMesh
     klass = Class.new(MeshError) do
       const_set(:CODE, code)
 
-      def self.new(message, *details)
-        super(self::CODE, message, *details)
+      def self.new(message, *details, mesh_metadata: {})
+        super(self::CODE, message, *details, mesh_metadata: mesh_metadata)
       end
     end
     const_set(name, klass)

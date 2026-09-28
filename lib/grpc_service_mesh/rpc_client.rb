@@ -2,9 +2,9 @@
 
 module GrpcServiceMesh
   # Base of every generated client class. Each declared rpc becomes a class
-  # method that resolves the transport's Client through the process router on
-  # every call: +name(request, metadata: {}, options: {}, reply_metadata: nil)+
-  # for a route and +name(request, metadata: {}, options: {})+ for a topic.
+  # method, +name(request, options: {})+, that resolves the transport's Client
+  # through the process router on every call. The outbound message metadata is
+  # the request's mesh_metadata.
   class RPCClient
     extend RpcDSL
 
@@ -13,39 +13,41 @@ module GrpcServiceMesh
 
       def define_rpc(rpc)
         if rpc.route?
-          define_singleton_method(rpc.name) do |request, metadata: {}, options: {}, reply_metadata: nil|
-            RPCClient.request(rpc, request, metadata, options, reply_metadata)
+          define_singleton_method(rpc.name) do |request, options: {}|
+            RPCClient.request(rpc, request, options)
           end
         else
-          define_singleton_method(rpc.name) do |request, metadata: {}, options: {}|
-            RPCClient.publish(rpc, request, metadata, options)
+          define_singleton_method(rpc.name) do |request, options: {}|
+            RPCClient.publish(rpc, request, options)
           end
         end
       end
     end
 
-    # Sends +request+ to a route and returns the decoded response. Raises
-    # MeshError for a reply carrying Grpc-Status, or INTERNAL when either
-    # payload does not decode. When +reply_metadata+ is a Hash, its contents
-    # are replaced with the reply's metadata on every reply that arrives; an
-    # error before a reply arrives leaves it unchanged.
-    def self.request(rpc, request, metadata, options, reply_metadata)
-      unless reply_metadata.nil? || reply_metadata.is_a?(Hash)
-        raise TypeError, "reply_metadata: takes a Hash, got #{reply_metadata.class}"
-      end
+    # Sends +request+ to a route and returns the decoded response, whose
+    # mesh_metadata is the reply's metadata. Raises MeshError for a reply
+    # carrying Grpc-Status, or INTERNAL when either payload does not decode;
+    # either error's mesh_metadata is the reply's metadata.
+    def self.request(rpc, request, options)
+      reply = client_for(rpc.target).request(outbound(rpc, request), options.to_h)
+      reply_metadata = reply.metadata.to_h
+      begin
+        if reply_metadata.key?(Wire::GRPC_STATUS_KEY)
+          raise MeshError.from_proto(decode(Google::Rpc::Status, reply.payload))
+        end
 
-      reply = client_for(rpc.target).request(outbound(rpc, request, metadata), options.to_h)
-      reply_metadata&.replace(reply.metadata.to_h)
-      if reply.metadata.key?(Wire::GRPC_STATUS_KEY)
-        raise MeshError.from_proto(decode(Google::Rpc::Status, reply.payload))
+        response = decode(rpc.output, reply.payload)
+      rescue MeshError => e
+        e.mesh_metadata = reply_metadata
+        raise
       end
-
-      decode(rpc.output, reply.payload)
+      response.mesh_metadata = reply_metadata
+      response
     end
 
     # Publishes +request+ to a topic. Returns nil.
-    def self.publish(rpc, request, metadata, options)
-      client_for(rpc.target).publish(outbound(rpc, request, metadata), options.to_h)
+    def self.publish(rpc, request, options)
+      client_for(rpc.target).publish(outbound(rpc, request), options.to_h)
       nil
     end
 
@@ -53,10 +55,10 @@ module GrpcServiceMesh
       GrpcServiceMesh.transport_router.client(target.metadata["transport"])
     end
 
-    def self.outbound(rpc, request, metadata)
+    def self.outbound(rpc, request)
       raise TypeError, "#{rpc.name} takes a #{rpc.input}, got #{request.class}" unless request.is_a?(rpc.input)
 
-      ServiceMesh::Message.new(target: rpc.target, metadata: Wire.metadata(metadata), payload: request.to_proto)
+      ServiceMesh::Message.new(target: rpc.target, metadata: Wire.metadata(request.mesh_metadata), payload: request.to_proto)
     end
 
     def self.decode(klass, payload)

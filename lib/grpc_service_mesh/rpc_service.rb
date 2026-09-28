@@ -3,13 +3,11 @@
 module GrpcServiceMesh
   # Base of every generated service class. The generated subclass declares its
   # rpcs; the application subclasses that and defines a method per rpc it
-  # serves, taking the decoded request and the inbound metadata Hash.
+  # serves, taking the decoded request, whose mesh_metadata is the inbound
+  # message metadata. A route method returns the response; the response's
+  # mesh_metadata is the reply's metadata.
   class RPCService
     extend RpcDSL
-
-    # The fiber-local key holding the reply metadata of the running route
-    # handler, which GrpcServiceMesh.set_reply_metadata merges into.
-    REPLY_METADATA_KEY = :grpc_service_mesh_reply_metadata
 
     # A ServiceMesh::Endpoint for each route rpc this instance implements.
     def endpoints
@@ -32,33 +30,36 @@ module GrpcServiceMesh
 
     def endpoint_handler(rpc)
       lambda do |message|
-        outer = Thread.current[REPLY_METADATA_KEY]
-        reply_metadata = Thread.current[REPLY_METADATA_KEY] = {}
-        response = public_send(rpc.name, rpc.input.decode(message.payload), message.metadata)
+        response = public_send(rpc.name, decode_inbound(rpc, message))
         unless response.is_a?(rpc.output)
           raise TypeError, "#{rpc.name} returned #{response.class}, expected #{rpc.output}"
         end
 
-        metadata = Wire.metadata(reply_metadata.except(Wire::GRPC_STATUS_KEY))
+        metadata = Wire.metadata(response.mesh_metadata.except(Wire::GRPC_STATUS_KEY))
         ServiceMesh::Message.new(target: message.target, metadata: metadata, payload: response.to_proto)
       rescue MeshError => e
-        status_reply(message, e, reply_metadata)
+        status_reply(message, e)
       rescue => e
-        status_reply(message, MeshError.new(:UNKNOWN, e.message), reply_metadata)
-      ensure
-        Thread.current[REPLY_METADATA_KEY] = outer
+        status_reply(message, MeshError.new(:UNKNOWN, e.message))
       end
     end
 
     def subscriber_handler(rpc)
       lambda do |message|
-        public_send(rpc.name, rpc.input.decode(message.payload), message.metadata)
+        public_send(rpc.name, decode_inbound(rpc, message))
         nil
       end
     end
 
-    def status_reply(message, error, reply_metadata)
-      ServiceMesh::Message.new(target: message.target, metadata: Wire.status_metadata(error, reply_metadata), payload: error.proto.to_proto)
+    # The decoded payload carrying the message's metadata.
+    def decode_inbound(rpc, message)
+      request = rpc.input.decode(message.payload)
+      request.mesh_metadata = message.metadata
+      request
+    end
+
+    def status_reply(message, error)
+      ServiceMesh::Message.new(target: message.target, metadata: Wire.status_metadata(error, error.mesh_metadata), payload: error.proto.to_proto)
     end
   end
 end
