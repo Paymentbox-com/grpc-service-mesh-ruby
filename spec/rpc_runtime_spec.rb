@@ -29,16 +29,16 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
 
     expect(rpc_runtime.transport).to eq("nats")
     expect(rpc_runtime.deployment_group).to eq("shop")
-    expect(rpc_runtime.underlying).to be_a(MemoryTransport::Runtime)
-    expect(rpc_runtime.underlying.config).to eq({"url" => "nats://127.0.0.1:4222", "deployment_group" => "shop"})
-    expect(rpc_runtime.underlying.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
-    expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
+    expect(rpc_runtime.t_runtime).to be_a(MemoryTransport::Runtime)
+    expect(rpc_runtime.t_runtime.config).to eq({"url" => "nats://127.0.0.1:4222", "deployment_group" => "shop"})
+    expect(rpc_runtime.t_runtime.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
+    expect(rpc_runtime.t_runtime.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
   end
 
   it "hands the router's client to the runtime lambda" do
     rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime)
 
-    expect(rpc_runtime.underlying.client).to equal(client)
+    expect(rpc_runtime.t_runtime.client).to equal(client)
   end
 
   it "sets deployment_group over the one in the given config and leaves the given config unchanged" do
@@ -46,7 +46,7 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
 
     rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime, config: config)
 
-    expect(rpc_runtime.underlying.config).to eq({"deployment_group" => "shop"})
+    expect(rpc_runtime.t_runtime.config).to eq({"deployment_group" => "shop"})
     expect(config).to eq({"deployment_group" => "configured"})
   end
 
@@ -74,15 +74,15 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
 
   it "delegates start, stop, running?, and client to the transport runtime" do
     rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime)
-    underlying = rpc_runtime.underlying
+    t_runtime = rpc_runtime.t_runtime
 
     expect(rpc_runtime.running?).to be(false)
     rpc_runtime.start
-    expect(underlying.starts).to eq(1)
+    expect(t_runtime.starts).to eq(1)
     expect(rpc_runtime.running?).to be(true)
-    expect(rpc_runtime.client).to equal(underlying.client)
+    expect(rpc_runtime.client).to equal(t_runtime.client)
     expect(rpc_runtime.stop(2.5)).to be(true)
-    expect(underlying.stops).to eq([2.5])
+    expect(t_runtime.stops).to eq([2.5])
     expect(rpc_runtime.running?).to be(false)
   end
 
@@ -123,31 +123,31 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
       rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime,
         endpoints: [given_endpoint])
 
-      expect(rpc_runtime.underlying.endpoints).to eq([given_endpoint])
-      expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
+      expect(rpc_runtime.t_runtime.endpoints).to eq([given_endpoint])
+      expect(rpc_runtime.t_runtime.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
     end
 
     it "serves the given subscribers and the registry's endpoints" do
       rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime,
         subscribers: [given_subscriber])
 
-      expect(rpc_runtime.underlying.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
-      expect(rpc_runtime.underlying.subscribers).to eq([given_subscriber])
+      expect(rpc_runtime.t_runtime.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
+      expect(rpc_runtime.t_runtime.subscribers).to eq([given_subscriber])
     end
 
     it "serves the given endpoints and subscribers" do
       rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime,
         endpoints: [given_endpoint], subscribers: [given_subscriber])
 
-      expect(rpc_runtime.underlying.endpoints).to eq([given_endpoint])
-      expect(rpc_runtime.underlying.subscribers).to eq([given_subscriber])
+      expect(rpc_runtime.t_runtime.endpoints).to eq([given_endpoint])
+      expect(rpc_runtime.t_runtime.subscribers).to eq([given_subscriber])
     end
 
     it "serves no endpoints for endpoints: []" do
       rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime, endpoints: [])
 
-      expect(rpc_runtime.underlying.endpoints).to eq([])
-      expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
+      expect(rpc_runtime.t_runtime.endpoints).to eq([])
+      expect(rpc_runtime.t_runtime.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
     end
 
     it "raises ArgumentError naming the segments and deployment_group of an endpoint in another group" do

@@ -7,6 +7,10 @@ module GrpcServiceMesh
   class RPCService
     extend RpcDSL
 
+    # The fiber-local key holding the reply metadata of the running route
+    # handler, which GrpcServiceMesh.set_reply_metadata merges into.
+    REPLY_METADATA_KEY = :grpc_service_mesh_reply_metadata
+
     # A ServiceMesh::Endpoint for each route rpc this instance implements.
     def endpoints
       implemented.select(&:route?).map { |rpc| ServiceMesh::Endpoint.new(target: rpc.target, handler: endpoint_handler(rpc)) }
@@ -28,16 +32,21 @@ module GrpcServiceMesh
 
     def endpoint_handler(rpc)
       lambda do |message|
+        outer = Thread.current[REPLY_METADATA_KEY]
+        reply_metadata = Thread.current[REPLY_METADATA_KEY] = {}
         response = public_send(rpc.name, rpc.input.decode(message.payload), message.metadata)
         unless response.is_a?(rpc.output)
           raise TypeError, "#{rpc.name} returned #{response.class}, expected #{rpc.output}"
         end
 
-        ServiceMesh::Message.new(target: message.target, metadata: Wire.metadata, payload: response.to_proto)
+        metadata = Wire.metadata(reply_metadata.except(Wire::GRPC_STATUS_KEY))
+        ServiceMesh::Message.new(target: message.target, metadata: metadata, payload: response.to_proto)
       rescue MeshError => e
-        status_reply(message, e)
+        status_reply(message, e, reply_metadata)
       rescue => e
-        status_reply(message, MeshError.new(:UNKNOWN, e.message))
+        status_reply(message, MeshError.new(:UNKNOWN, e.message), reply_metadata)
+      ensure
+        Thread.current[REPLY_METADATA_KEY] = outer
       end
     end
 
@@ -48,8 +57,8 @@ module GrpcServiceMesh
       end
     end
 
-    def status_reply(message, error)
-      ServiceMesh::Message.new(target: message.target, metadata: Wire.status_metadata(error), payload: error.proto.to_proto)
+    def status_reply(message, error, reply_metadata)
+      ServiceMesh::Message.new(target: message.target, metadata: Wire.status_metadata(error, reply_metadata), payload: error.proto.to_proto)
     end
   end
 end

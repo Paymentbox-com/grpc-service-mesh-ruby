@@ -50,6 +50,40 @@ RSpec.describe GrpcServiceMesh::RPCClient do
       end
     end
 
+    it "replaces the contents of reply_metadata with a successful reply's metadata" do
+      transport_client { reply({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"}, Shop::Order.new.to_proto) }
+      reply_metadata = {"Before" => "call"}
+
+      Shop::OrderClient.place(Shop::Order.new, reply_metadata: reply_metadata)
+
+      expect(reply_metadata).to eq({"Content-Type" => "application/x-protobuf", "Request-Id" => "r1"})
+    end
+
+    it "replaces the contents of reply_metadata with a MeshError reply's metadata" do
+      status = Google::Rpc::Status.new(code: 5, message: "no such order")
+      transport_client { reply({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"}, status.to_proto) }
+      reply_metadata = {}
+
+      expect { Shop::OrderClient.place(Shop::Order.new, reply_metadata: reply_metadata) }.to raise_error(GrpcServiceMesh::NotFoundError)
+      expect(reply_metadata).to eq({"Content-Type" => "application/x-protobuf", "Grpc-Status" => "5", "Retry-After" => "30"})
+    end
+
+    it "leaves reply_metadata unchanged on a transport error" do
+      transport_client { raise MemoryTransport::NoReceiver, "shop.OrderService.Place" }
+      reply_metadata = {"Before" => "call"}
+
+      expect { Shop::OrderClient.place(Shop::Order.new, reply_metadata: reply_metadata) }.to raise_error(MemoryTransport::NoReceiver)
+      expect(reply_metadata).to eq({"Before" => "call"})
+    end
+
+    it "rejects a reply_metadata that is not a Hash before sending" do
+      client = transport_client { raise "not reached" }
+
+      expect { Shop::OrderClient.place(Shop::Order.new, reply_metadata: []) }
+        .to raise_error(TypeError, "reply_metadata: takes a Hash, got Array")
+      expect(client.requests).to eq([])
+    end
+
     it "raises INTERNAL when the response does not decode" do
       transport_client { reply({"Content-Type" => "application/x-protobuf"}, "\x80".b) }
 

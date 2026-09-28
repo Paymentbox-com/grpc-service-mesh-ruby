@@ -13,8 +13,8 @@ module GrpcServiceMesh
     end
 
     # Metadata for a reply whose payload is an encoded google.rpc.Status.
-    def self.status_metadata(error)
-      {CONTENT_TYPE_KEY => CONTENT_TYPE, GRPC_STATUS_KEY => error.proto.code.to_s}
+    def self.status_metadata(error, extra = {})
+      extra.to_h.merge(CONTENT_TYPE_KEY => CONTENT_TYPE, GRPC_STATUS_KEY => error.proto.code.to_s)
     end
   end
 end

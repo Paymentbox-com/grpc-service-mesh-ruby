@@ -21,7 +21,7 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.10.0"
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.11.0"
 gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
 gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
@@ -101,6 +101,24 @@ serves exactly the rpc methods defined in it or below it; an rpc whose method
 is missing is not bound. Every registered binding is kept, so two
 registrations of one target hand the transport two bindings for it.
 
+#### Reply metadata
+
+A route method sets metadata on its reply with
+`GrpcServiceMesh.set_reply_metadata`. A later call adds keys and overwrites
+the ones already set. The reply carries the metadata on success and on a
+`MeshError` reply, including the `UNKNOWN` reply for any other exception.
+The library writes `Content-Type` and `Grpc-Status` after the application's
+values, so its own values win, and a successful reply carries no
+`Grpc-Status`. Outside a route method, such as in a topic method,
+`set_reply_metadata` has no effect.
+
+```ruby
+def place(request, metadata)
+  GrpcServiceMesh.set_reply_metadata("Request-Id" => metadata["Request-Id"].to_s)
+  Shop::Order.new(id: @store.place(request.item), item: request.item)
+end
+```
+
 ### Starting an RPCRuntime
 
 An `RPCRuntime` serves one transport and one deployment group. Its
@@ -142,7 +160,7 @@ GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop", run
 ```
 
 `start`, `stop(drain)`, `running?`, and `client` delegate to the transport's
-`Runtime`, which `underlying` exposes. `stop` closes the client. The transport
+`Runtime`, which `t_runtime` exposes. `stop` closes the client. The transport
 documents what its runtime does, including what `stop` returns and how it
 treats a subscriber handler that raises.
 
@@ -151,7 +169,8 @@ treats a subscriber handler that raises.
 Generated client methods are class methods taking the request message and two
 keywords. `metadata:` is added to the outbound message's metadata and
 `options:` is the per-call Hash the transport's `request` or `publish` takes.
-Both default to empty. Every call resolves the transport's `Client` through
+Both default to empty. A route method also takes `reply_metadata:`, described
+below. Every call resolves the transport's `Client` through
 the router, so the same code runs in a process that serves and in one that
 only calls.
 
@@ -175,6 +194,20 @@ Shop::OrderClient.placed(Shop::Order.new(id: "o-1", item: "book"), metadata: {"E
 A route method returns the decoded response. A topic method returns `nil`. A
 request that is not an instance of the rpc's input class raises `TypeError`
 before anything is sent.
+
+#### Reply metadata
+
+A route method given a Hash as `reply_metadata:` replaces its contents with
+the reply's metadata, on success and on a `MeshError` reply. An error before a
+reply arrives, such as a transport error, leaves it unchanged. A value that is
+neither `nil`, the default, nor a Hash raises `TypeError` before anything is
+sent.
+
+```ruby
+reply_metadata = {}
+order = Shop::OrderClient.place(Shop::Order.new(item: "book"), reply_metadata: reply_metadata)
+reply_metadata["Request-Id"]
+```
 
 ## Errors
 
@@ -242,11 +275,12 @@ messages' binary encodings.
 | `GrpcServiceMesh.add_transport(name, client)` | shortcut for `transport_router.add` |
 | `GrpcServiceMesh.registry` | the process `Registry` |
 | `GrpcServiceMesh.register(service)` | shortcut for `registry.register` |
+| `GrpcServiceMesh.set_reply_metadata(metadata)` | merges `metadata` into the reply of the running route method |
 | `GrpcServiceMesh::TransportRouter` | `#add(name, client)`, `#client(name)`, `#names`, `#close`; holds one client per transport name |
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
-| `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:, runtime:, config: {}, endpoints: nil, subscribers: nil)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#underlying`, `#transport`, `#deployment_group` |
+| `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:, runtime:, config: {}, endpoints: nil, subscribers: nil)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#t_runtime`, `#transport`, `#deployment_group` |
 | `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers` |
-| `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `.rpcs` |
+| `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `.rpcs`; a route method takes `metadata:`, `options:`, and `reply_metadata:`, a topic method `metadata:` and `options:` |
 | `GrpcServiceMesh::Rpc` | a `Data` with `name`, `target`, `input`, `output`, `kind`, `owner`, `#route?` |
 | `GrpcServiceMesh::MeshError` | above |
 | `GrpcServiceMesh::Wire` | `CONTENT_TYPE_KEY`, `CONTENT_TYPE`, `GRPC_STATUS_KEY` |

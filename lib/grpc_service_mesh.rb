@@ -37,5 +37,13 @@ module GrpcServiceMesh
     def register(service)
       registry.register(service)
     end
+
+    # Merges +metadata+ into the metadata of the reply the running route
+    # handler sends. A later call adds keys and overwrites the ones already
+    # set. Content-Type and Grpc-Status are set by the library and override
+    # values in +metadata+. Outside a route handler it has no effect.
+    def set_reply_metadata(metadata)
+      Thread.current[RPCService::REPLY_METADATA_KEY]&.merge!(metadata.to_h)
+    end
   end
 end

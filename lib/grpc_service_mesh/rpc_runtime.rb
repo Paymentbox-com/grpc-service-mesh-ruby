@@ -6,7 +6,7 @@ module GrpcServiceMesh
   # bindings from the process registry, and builds the transport's Runtime
   # from them with the +runtime+ constructor.
   class RPCRuntime
-    attr_reader :transport, :deployment_group, :underlying
+    attr_reader :transport, :deployment_group, :t_runtime
 
     # +runtime+ is ->(client, config, endpoints:, subscribers:) returning the
     # transport's Runtime. It receives +config+ with deployment_group set.
@@ -23,7 +23,7 @@ module GrpcServiceMesh
       @deployment_group = deployment_group
       endpoints&.each { |binding| check_target("endpoint", binding.target) }
       subscribers&.each { |binding| check_target("subscriber", binding.target) }
-      @underlying = runtime.call(
+      @t_runtime = runtime.call(
         client,
         config.to_h.merge(ServiceMesh::DEPLOYMENT_GROUP_KEY => deployment_group),
         endpoints: endpoints || registry.endpoints(deployment_group),
@@ -31,13 +31,13 @@ module GrpcServiceMesh
       )
     end
 
-    def start = @underlying.start
+    def start = @t_runtime.start
 
-    def stop(drain) = @underlying.stop(drain)
+    def stop(drain) = @t_runtime.stop(drain)
 
-    def running? = @underlying.running?
+    def running? = @t_runtime.running?
 
-    def client = @underlying.client
+    def client = @t_runtime.client
 
     private
 

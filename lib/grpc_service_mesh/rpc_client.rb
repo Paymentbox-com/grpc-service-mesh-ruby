@@ -2,8 +2,9 @@
 
 module GrpcServiceMesh
   # Base of every generated client class. Each declared rpc becomes a class
-  # method +name(request, metadata: {}, options: {})+ that resolves the
-  # transport's Client through the process router on every call.
+  # method that resolves the transport's Client through the process router on
+  # every call: +name(request, metadata: {}, options: {}, reply_metadata: nil)+
+  # for a route and +name(request, metadata: {}, options: {})+ for a topic.
   class RPCClient
     extend RpcDSL
 
@@ -11,17 +12,30 @@ module GrpcServiceMesh
       private
 
       def define_rpc(rpc)
-        define_singleton_method(rpc.name) do |request, metadata: {}, options: {}|
-          rpc.route? ? RPCClient.request(rpc, request, metadata, options) : RPCClient.publish(rpc, request, metadata, options)
+        if rpc.route?
+          define_singleton_method(rpc.name) do |request, metadata: {}, options: {}, reply_metadata: nil|
+            RPCClient.request(rpc, request, metadata, options, reply_metadata)
+          end
+        else
+          define_singleton_method(rpc.name) do |request, metadata: {}, options: {}|
+            RPCClient.publish(rpc, request, metadata, options)
+          end
         end
       end
     end
 
     # Sends +request+ to a route and returns the decoded response. Raises
     # MeshError for a reply carrying Grpc-Status, or INTERNAL when either
-    # payload does not decode.
-    def self.request(rpc, request, metadata, options)
+    # payload does not decode. When +reply_metadata+ is a Hash, its contents
+    # are replaced with the reply's metadata on every reply that arrives; an
+    # error before a reply arrives leaves it unchanged.
+    def self.request(rpc, request, metadata, options, reply_metadata)
+      unless reply_metadata.nil? || reply_metadata.is_a?(Hash)
+        raise TypeError, "reply_metadata: takes a Hash, got #{reply_metadata.class}"
+      end
+
       reply = client_for(rpc.target).request(outbound(rpc, request, metadata), options.to_h)
+      reply_metadata&.replace(reply.metadata.to_h)
       if reply.metadata.key?(Wire::GRPC_STATUS_KEY)
         raise MeshError.from_proto(decode(Google::Rpc::Status, reply.payload))
       end
