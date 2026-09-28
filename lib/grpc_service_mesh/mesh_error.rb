@@ -15,13 +15,15 @@ module GrpcServiceMesh
 
     attr_reader :proto
 
-    # MeshError.new(code, message, *details, mesh_metadata: {}) or, with code
-    # UNKNOWN, MeshError.new(message, *details, mesh_metadata: {}). Returns
-    # the subclass for the code when one exists; a subclass called directly
-    # takes (message, *details, mesh_metadata: {}) and builds itself.
+    # MeshError.new(code, message, *details, mesh_metadata: {}). Returns the
+    # subclass for the code when one exists; a subclass called directly takes
+    # (message, *details, mesh_metadata: {}) and builds itself.
     def self.new(*args, mesh_metadata: {})
-      args.unshift(:UNKNOWN) unless args.first.is_a?(Symbol) || args.first.is_a?(Integer)
       if equal?(MeshError)
+        unless args.first.is_a?(Symbol) || args.first.is_a?(Integer)
+          raise ArgumentError, "MeshError.new takes a Google::Rpc::Code first, such as MeshError.new(:NOT_FOUND, \"no such order\"); " \
+            "UnknownError.new(message) raises an UNKNOWN error"
+        end
         klass = BY_CODE[code_number(args.first)]
         return klass.new(*args.drop(1), mesh_metadata: mesh_metadata) if klass
       end

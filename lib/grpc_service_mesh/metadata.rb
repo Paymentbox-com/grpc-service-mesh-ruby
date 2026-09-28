@@ -10,9 +10,14 @@ module GrpcServiceMesh
     EMPTY = {}.freeze
     private_constant :EMPTY
 
-    # The metadata Hash set on this object, or a frozen empty Hash when none is set.
+    # The metadata Hash of this object. On first read it is a new empty Hash
+    # stored on the object, so keys can be written into it directly. A frozen
+    # object with none set has a frozen empty Hash.
     def mesh_metadata
-      @mesh_metadata || EMPTY
+      return @mesh_metadata if instance_variable_defined?(:@mesh_metadata) && @mesh_metadata
+      return EMPTY if frozen?
+
+      @mesh_metadata = {}
     end
 
     # Sets the metadata. Takes a Hash, or nil for none.

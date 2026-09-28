@@ -20,18 +20,12 @@ RSpec.describe GrpcServiceMesh::MeshError do
     expect(error.mesh_metadata).to eq({"Retry-After" => "30"})
   end
 
-  it "builds UNKNOWN from a message and details with no code" do
-    info = Google::Rpc::ErrorInfo.new(reason: "STORE_DOWN")
-
-    error = described_class.new("store is down", info)
-
-    expect(error).to be_an_instance_of(GrpcServiceMesh::UnknownError)
-    expect(error.message).to eq("store is down")
-    expect(error.details[0].unpack(Google::Rpc::ErrorInfo)).to eq(info)
+  it "rejects a message with no code" do
+    expect { described_class.new("store is down") }.to raise_error(ArgumentError, /takes a Google::Rpc::Code first/)
   end
 
-  it "is raised as UNKNOWN from a class and a message" do
-    expect { raise described_class, "store is down" }.to raise_error(GrpcServiceMesh::UnknownError, "store is down") do |error|
+  it "raises UNKNOWN from UnknownError and a message" do
+    expect { raise GrpcServiceMesh::UnknownError, "store is down" }.to raise_error(GrpcServiceMesh::UnknownError, "store is down") do |error|
       expect(error.code).to eq(:UNKNOWN)
     end
   end

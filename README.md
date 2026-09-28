@@ -46,7 +46,7 @@ or returns. It adds two methods.
 
 | method | value |
 |---|---|
-| `#mesh_metadata` | the metadata Hash set on the object, or a frozen empty Hash when none is set |
+| `#mesh_metadata` | the object's metadata Hash; on first read a new empty Hash stored on the object, so keys can be written into it; a frozen object with none set returns a frozen empty Hash |
 | `#mesh_metadata=(hash)` | sets the metadata; `nil` sets none, and a value that is not a Hash raises `TypeError` |
 
 The library sets `mesh_metadata` on the objects it builds, the decoded request
@@ -238,7 +238,6 @@ order.mesh_metadata["Request-Id"]
 | member | value |
 |---|---|
 | `MeshError.new(code, message, *details, mesh_metadata: {})` | `code` is a `Google::Rpc::Code` name such as `:NOT_FOUND` or its number such as `5`; `details` are protobuf messages, packed into `Google::Protobuf::Any`, or `Any` values already packed; `mesh_metadata:` is the metadata of the reply that reports the error |
-| `MeshError.new(message, *details, mesh_metadata: {})` | the same with code `UNKNOWN` |
 | `MeshError.from_proto(status)` | wraps a `Google::Rpc::Status` |
 | `#code` | the `Google::Rpc::Code` name, or the number when it has no name |
 | `#message` | the text, also what `to_s` returns |
@@ -253,8 +252,9 @@ order.mesh_metadata["Request-Id"]
 built from a message, details, and `mesh_metadata:`,
 `GrpcServiceMesh::NotFoundError.new("no such order", info)`, and fixes its own
 code. `raise GrpcServiceMesh::NotFoundError, "no such order"` builds the same
-error with no details, and `raise GrpcServiceMesh::MeshError, "store is down"`
-raises an `UnknownError`. `MeshError.new` and
+error with no details, and `raise GrpcServiceMesh::UnknownError, "store is down"`
+raises an `UNKNOWN` error. `MeshError.new` takes a code first and raises
+`ArgumentError` without one. `MeshError.new` and
 `MeshError.from_proto` return the subclass for the code they are given, so an
 error decoded off the wire is rescued by its class. A code with no name stays
 a plain `MeshError`, and `rescue GrpcServiceMesh::MeshError` catches every

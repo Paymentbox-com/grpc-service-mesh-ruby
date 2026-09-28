@@ -1,8 +1,16 @@
 # frozen_string_literal: true
 
 RSpec.describe GrpcServiceMesh::Metadata do
-  it "returns a frozen empty Hash when none is set" do
+  it "stores a new empty Hash on first read, so keys can be written into it" do
     order = Shop::Order.new
+
+    order.mesh_metadata["Cache-Control"] = "no-store"
+
+    expect(order.mesh_metadata).to eq({"Cache-Control" => "no-store"})
+  end
+
+  it "returns a frozen empty Hash for a frozen object with none set" do
+    order = Shop::Order.new.freeze
 
     expect(order.mesh_metadata).to eq({})
     expect(order.mesh_metadata).to be_frozen
