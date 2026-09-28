@@ -94,4 +94,82 @@ RSpec.describe GrpcServiceMesh::RPCRuntime do
 
     expect(client.closed?).to be(true)
   end
+
+  describe "with bindings given in place of the registry's" do
+    let(:orders) do
+      Class.new(Shop::OrderService) do
+        def place(request, metadata) = request
+
+        def placed(request, metadata)
+        end
+      end
+    end
+
+    let(:handler) { ->(_message) {} }
+
+    let(:given_endpoint) do
+      ServiceMesh::Endpoint.new(handler: handler, target: ServiceMesh::Target.new(segments: %w[shop Given Get], kind: :route,
+        metadata: {"deployment_group" => "shop", "transport" => "nats"}))
+    end
+
+    let(:given_subscriber) do
+      ServiceMesh::Subscriber.new(handler: handler, target: ServiceMesh::Target.new(segments: %w[shop Given Made], kind: :topic,
+        metadata: {"deployment_group" => "shop", "transport" => "nats"}))
+    end
+
+    before { GrpcServiceMesh.register(orders.new) }
+
+    it "serves the given endpoints and the registry's subscribers" do
+      rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime,
+        endpoints: [given_endpoint])
+
+      expect(rpc_runtime.underlying.endpoints).to eq([given_endpoint])
+      expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
+    end
+
+    it "serves the given subscribers and the registry's endpoints" do
+      rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime,
+        subscribers: [given_subscriber])
+
+      expect(rpc_runtime.underlying.endpoints.map(&:target)).to eq([Shop::OrderTargets::PLACE])
+      expect(rpc_runtime.underlying.subscribers).to eq([given_subscriber])
+    end
+
+    it "serves the given endpoints and subscribers" do
+      rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime,
+        endpoints: [given_endpoint], subscribers: [given_subscriber])
+
+      expect(rpc_runtime.underlying.endpoints).to eq([given_endpoint])
+      expect(rpc_runtime.underlying.subscribers).to eq([given_subscriber])
+    end
+
+    it "serves no endpoints for endpoints: []" do
+      rpc_runtime = described_class.new(transport: "nats", deployment_group: "shop", runtime: runtime, endpoints: [])
+
+      expect(rpc_runtime.underlying.endpoints).to eq([])
+      expect(rpc_runtime.underlying.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
+    end
+
+    it "raises ArgumentError naming the segments and deployment_group of an endpoint in another group" do
+      calls = []
+      counting = ->(*args, **kwargs) { calls << [args, kwargs] }
+      billing = ServiceMesh::Endpoint.new(handler: handler, target: ServiceMesh::Target.new(segments: %w[billing Invoice Get],
+        kind: :route, metadata: {"deployment_group" => "billing", "transport" => "nats"}))
+
+      expect { described_class.new(transport: "nats", deployment_group: "shop", runtime: counting, endpoints: [billing]) }
+        .to raise_error(ArgumentError, 'endpoint ["billing", "Invoice", "Get"] has deployment_group "billing", want "shop"')
+      expect(calls).to eq([])
+    end
+
+    it "raises ArgumentError naming the segments and transport of a subscriber on another transport" do
+      calls = []
+      counting = ->(*args, **kwargs) { calls << [args, kwargs] }
+      http = ServiceMesh::Subscriber.new(handler: handler, target: ServiceMesh::Target.new(segments: %w[shop Order Made],
+        kind: :topic, metadata: {"deployment_group" => "shop", "transport" => "http"}))
+
+      expect { described_class.new(transport: "nats", deployment_group: "shop", runtime: counting, subscribers: [http]) }
+        .to raise_error(ArgumentError, 'subscriber ["shop", "Order", "Made"] has transport "http", want "nats"')
+      expect(calls).to eq([])
+    end
+  end
 end

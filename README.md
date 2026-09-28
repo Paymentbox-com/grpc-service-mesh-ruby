@@ -27,7 +27,7 @@ tag; Bundler needs both git sources in the Gemfile.
 
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.9.0"
+gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.10.0"
 gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.0"
 gem "service_mesh_nats", git: "https://github.com/Paymentbox-com/service-mesh-nats-ruby", tag: "v0.5.0" # or another transport
 ```
@@ -135,6 +135,18 @@ A `runtime:` that does not respond to `call` raises `ArgumentError`, a name
 the router does not hold raises `GrpcServiceMesh::UnknownTransport` from the
 constructor, and whatever the `runtime:` lambda raises passes through.
 
+`endpoints:` and `subscribers:` give the runtime a list to serve in place of
+the registry's list of that kind, so a process can serve part of a deployment
+group. `nil`, the default, takes the list from the registry, and `[]` serves
+none of that kind. Every target in a given list must carry the runtime's
+`deployment_group` and `transport`; one that does not raises `ArgumentError`
+naming its segments and the key that differs.
+
+```ruby
+GrpcServiceMesh::RPCRuntime.new(transport: "nats", deployment_group: "shop", runtime: runtime_lambda,
+  endpoints: Orders.new(store).endpoints)
+```
+
 `start`, `stop(drain)`, `running?`, and `client` delegate to the transport's
 `Runtime`, which `underlying` exposes. `stop` closes the client. The transport
 documents what its runtime does, including what `stop` returns and how it
@@ -238,7 +250,7 @@ messages' binary encodings.
 | `GrpcServiceMesh.register(service)` | shortcut for `registry.register` |
 | `GrpcServiceMesh::TransportRouter` | `#add(name, client)`, `#client(name)`, `#names`, `#close`; holds one client per transport name |
 | `GrpcServiceMesh::Registry` | `#register(service)`, `#endpoints(deployment_group)`, `#subscribers(deployment_group)` |
-| `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:, runtime:, config: {})` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#underlying`, `#transport`, `#deployment_group` |
+| `GrpcServiceMesh::RPCRuntime.new(transport:, deployment_group:, runtime:, config: {}, endpoints: nil, subscribers: nil)` | `#start`, `#stop(drain)`, `#running?`, `#client`, `#underlying`, `#transport`, `#deployment_group` |
 | `GrpcServiceMesh::RPCService` | base class; `.rpc(...)`, `.rpcs`, `#endpoints`, `#subscribers` |
 | `GrpcServiceMesh::RPCClient` | base class; `.rpc(...)` defines a class method per rpc, `.rpcs` |
 | `GrpcServiceMesh::Rpc` | a `Data` with `name`, `target`, `input`, `output`, `kind`, `owner`, `#route?` |
