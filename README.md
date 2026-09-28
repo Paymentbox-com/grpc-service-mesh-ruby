@@ -13,12 +13,6 @@ The Service Mesh API types and errors come from
 `service_mesh`. Transports are separate gems that the application configures at
 boot; the NATS one is
 [service-mesh-nats-ruby](https://github.com/Paymentbox-com/service-mesh-nats-ruby).
-The Go counterparts are
-[service-mesh-go](https://github.com/Paymentbox-com/service-mesh-go),
-[service-mesh-nats-go](https://github.com/Paymentbox-com/service-mesh-nats-go),
-and [grpc-service-mesh-go](https://github.com/Paymentbox-com/grpc-service-mesh-go).
-The foundation specification is
-[service-mesh-api](https://github.com/Paymentbox-com/service-mesh-api).
 
 ## Install
 
