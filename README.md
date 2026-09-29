@@ -2,8 +2,7 @@
 
 The Ruby library for the
 [gRPC Service Mesh API](https://github.com/Paymentbox-com/grpc-service-mesh-api),
-packaged as the gem `grpc_service_mesh`, module `GrpcServiceMesh`. The
-specification is the authority for everything this gem does. The library
+packaged as the gem `grpc_service_mesh`, module `GrpcServiceMesh`. The library
 provides the non-generated types the specification names, `TransportRouter`,
 `Registry`, `RPCRuntime`, and `MeshError`, together with the two base classes
 the generator's Ruby output builds on, `RPCService` and `RPCClient`.
