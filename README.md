@@ -1,6 +1,6 @@
 # grpc-service-mesh-ruby
 
-`grpc_service_mesh` is the Ruby implementation of the
+grpc-service-mesh-ruby is the Ruby implementation of the
 [gRPC Service Mesh API](https://github.com/Paymentbox-com/grpc-service-mesh-api).
 It carries protobuf messages over any transport that implements the
 [Service Mesh API Specification](https://github.com/Paymentbox-com/service-mesh-api)

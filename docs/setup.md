@@ -53,7 +53,7 @@ transport's `Runtime`. An rpc method the subclass does not define is not
 served.
 
 ```ruby
-GrpcServiceMesh.register(Orders.new(store, audit))
+GrpcServiceMesh.register(Orders.new(db_model, logger))
 ```
 
 The registry keeps every endpoint and subscriber registered with it. If two
@@ -105,7 +105,7 @@ runtime's `deployment_group` and `transport`.
 
 ```ruby
 GrpcServiceMesh::RPCRuntime.new(transport: "mem", deployment_group: "shop", runtime: build_runtime,
-  endpoints: Orders.new(store, audit).endpoints)
+  endpoints: Orders.new(db_model, logger).endpoints)
 ```
 
 `start`, `stop(drain)`, `running?`, and `client` delegate to the underlying

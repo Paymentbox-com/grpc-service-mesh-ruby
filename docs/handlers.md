@@ -31,25 +31,33 @@ Each method takes one argument, the decoded request. The subclass is an
 ordinary Ruby class, so it can take its dependencies through `initialize` and
 keep them on the instance.
 
+In this example and the others on this page, `db_model` stands for the
+application's own database model for orders, which this library knows nothing
+about. Its `in_stock?(item)` says whether an item is available, and
+`create(item)` saves a new order and returns the saved record, whose `id` and
+`item` are its id and item. `logger` is a standard
+Ruby `Logger`.
+
 ```ruby
 class Orders < Shop::OrderService
-  def initialize(store, audit)
-    @store = store
-    @audit = audit
+  def initialize(db_model, logger)
+    @db_model = db_model
+    @logger = logger
   end
 
   # ROUTE: returns a Shop::Order
   def place(request)
-    Shop::Order.new(id: @store.place(request.item), item: request.item)
+    order = @db_model.create(request.item)
+    Shop::Order.new(id: order.id, item: order.item)
   end
 
   # TOPIC: the return value is ignored
   def placed(event)
-    @audit.record(event)
+    @logger.info("order placed: #{event.id}")
   end
 end
 
-GrpcServiceMesh.register(Orders.new(store, audit))
+GrpcServiceMesh.register(Orders.new(db_model, logger))
 ```
 
 An instance serves every rpc method that has a method defined on its class, or
@@ -70,7 +78,8 @@ def place(request)
     raise GrpcServiceMesh::InvalidArgumentError.new("Tenant is required",
       Google::Rpc::ErrorInfo.new(reason: "MISSING_TENANT", domain: "shop"))
   end
-  Shop::Order.new(id: @store.place(request.item), item: request.item)
+  order = @db_model.create(request.item)
+  Shop::Order.new(id: order.id, item: order.item)
 end
 ```
 
@@ -83,11 +92,12 @@ and `InvalidArgumentError`, take the message and any detail messages.
 
 ```ruby
 def place(request)
-  unless @store.in_stock?(request.item)
+  unless @db_model.in_stock?(request.item)
     raise GrpcServiceMesh::NotFoundError.new("no such item",
       Google::Rpc::ErrorInfo.new(reason: "ITEM_MISSING", domain: "shop"))
   end
-  Shop::Order.new(id: @store.place(request.item), item: request.item)
+  order = @db_model.create(request.item)
+  Shop::Order.new(id: order.id, item: order.item)
 end
 ```
 
@@ -124,10 +134,11 @@ metadata.
 
 ```ruby
 def place(request)
-  unless @store.in_stock?(request.item)
+  unless @db_model.in_stock?(request.item)
     raise GrpcServiceMesh::NotFoundError.new("no such item", mesh_metadata: {"Retry-After" => "30"})
   end
-  order = Shop::Order.new(id: @store.place(request.item), item: request.item)
+  record = @db_model.create(request.item)
+  order = Shop::Order.new(id: record.id, item: record.item)
   order.mesh_metadata["Request-Id"] = "7"
   order
 end
