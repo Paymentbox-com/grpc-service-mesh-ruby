@@ -1,3 +1,5 @@
 [tools]
+# Go runs grpc-service-mesh-gen, which generates the reference output in spec/support/testproto.
+go = "1.26.6"
 ruby = "3.3.6"
 just = "latest"

@@ -1,0 +1,10 @@
+// Directory-wide settings for the shop deployment group. The specs serve it
+// over the in-memory transport in spec/support/memory_transport.rb, named
+// "mem".
+syntax = "proto3";
+
+package shop;
+
+import "mesh/options.proto";
+
+option (mesh.transport) = "mem";

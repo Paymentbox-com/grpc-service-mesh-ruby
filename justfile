@@ -64,10 +64,17 @@ proto-spec:
     git -c advice.detachedHead=false clone --quiet --depth 1 --branch {{spec_tag}} https://github.com/Paymentbox-com/grpc-service-mesh-api "$spec"
     {{protoc}} --proto_path="$spec" --ruby_out=lib "$spec/mesh/options.proto"
 
-# Regenerate the message classes the specs use from spec/support/testproto
+# The grpc-service-mesh-gen version the reference output in spec/support/testproto is generated with
+gen_version := "v0.8.1"
+
+# Regenerate spec/support/testproto from spec/support/definitions with grpc-service-mesh-gen at {{gen_version}}
 [group('build')]
 proto-test:
-    {{protoc}} --proto_path=spec/support/testproto --ruby_out=spec/support/testproto spec/support/testproto/shop/order.proto
+    #!/usr/bin/env bash
+    set -euo pipefail
+    { grep -rl --include='*.rb' 'DO NOT EDIT' spec/support/testproto || true; } | xargs rm -f
+    mise exec -- go run github.com/Paymentbox-com/grpc-service-mesh-api/cmd/grpc-service-mesh-gen@{{gen_version}} \
+        --definitions spec/support/definitions --ruby_out=spec/support/testproto
 
 # Report lint findings (matches CI)
 [group('checks')]

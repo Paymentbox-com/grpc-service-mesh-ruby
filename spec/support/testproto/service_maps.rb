@@ -7,7 +7,7 @@ require "service_mesh"
 require_relative "shop/shop_grpcmesh"
 
 module ServiceMaps
-  NATS = ServiceMesh::ServiceMap.new(targets: [
+  MEM = ServiceMesh::ServiceMap.new(targets: [
     Shop::OrderTargets::PLACE,
     Shop::OrderTargets::PLACED
   ])

@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 RSpec.describe GrpcServiceMesh::RPCClient do
-  # Routes "nats" to a RecordingClient running the block.
+  # Routes "mem" to a RecordingClient running the block.
   def transport_client(&on_call)
     client = RecordingClient.new(&on_call)
-    GrpcServiceMesh.add_transport("nats", client)
+    GrpcServiceMesh.add_transport("mem", client)
     client
   end
 
@@ -114,7 +114,7 @@ RSpec.describe GrpcServiceMesh::RPCClient do
     end
 
     it "raises UnknownTransport when the target's transport is not configured" do
-      expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::UnknownTransport, 'unknown transport "nats"')
+      expect { Shop::OrderClient.place(Shop::Order.new) }.to raise_error(GrpcServiceMesh::UnknownTransport, 'unknown transport "mem"')
     end
   end
 

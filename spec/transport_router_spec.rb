@@ -4,29 +4,29 @@ RSpec.describe GrpcServiceMesh::TransportRouter do
   let(:router) { GrpcServiceMesh.transport_router }
 
   def memory_client
-    MemoryTransport::Client.new({"url" => "u"}, ServiceMaps::NATS, MemoryTransport::Bus.new)
+    MemoryTransport::Client.new({"url" => "u"}, ServiceMaps::MEM, MemoryTransport::Bus.new)
   end
 
   it "returns the client added under the name" do
     client = memory_client
-    GrpcServiceMesh.add_transport("nats", client)
+    GrpcServiceMesh.add_transport("mem", client)
 
-    expect(router.client("nats")).to equal(client)
+    expect(router.client("mem")).to equal(client)
   end
 
   it "lists the names it holds" do
-    GrpcServiceMesh.add_transport("nats", memory_client)
+    GrpcServiceMesh.add_transport("mem", memory_client)
     GrpcServiceMesh.add_transport("http", memory_client)
 
-    expect(router.names).to eq(%w[nats http])
+    expect(router.names).to eq(%w[mem http])
   end
 
   it "replaces the client when a name is added again" do
-    GrpcServiceMesh.add_transport("nats", memory_client)
+    GrpcServiceMesh.add_transport("mem", memory_client)
     second = memory_client
-    GrpcServiceMesh.add_transport("nats", second)
+    GrpcServiceMesh.add_transport("mem", second)
 
-    expect(router.client("nats")).to equal(second)
+    expect(router.client("mem")).to equal(second)
   end
 
   it "raises UnknownTransport from client for a name it does not hold" do
@@ -34,26 +34,26 @@ RSpec.describe GrpcServiceMesh::TransportRouter do
   end
 
   it "closes every added client" do
-    nats = memory_client
+    mem = memory_client
     http = memory_client
-    GrpcServiceMesh.add_transport("nats", nats)
+    GrpcServiceMesh.add_transport("mem", mem)
     GrpcServiceMesh.add_transport("http", http)
 
     router.close
 
-    expect(nats.closed?).to be(true)
+    expect(mem.closed?).to be(true)
     expect(http.closed?).to be(true)
   end
 
   it "closes every client when some fail and raises CloseFailed with each failure by name" do
     failing = Class.new { def close = raise(IOError, "flush failed") }
     http = memory_client
-    GrpcServiceMesh.add_transport("nats", failing.new)
+    GrpcServiceMesh.add_transport("mem", failing.new)
     GrpcServiceMesh.add_transport("http", http)
     GrpcServiceMesh.add_transport("queue", failing.new)
 
-    expect { router.close }.to raise_error(GrpcServiceMesh::CloseFailed, "nats: flush failed; queue: flush failed") do |error|
-      expect(error.failures.keys).to eq(%w[nats queue])
+    expect { router.close }.to raise_error(GrpcServiceMesh::CloseFailed, "mem: flush failed; queue: flush failed") do |error|
+      expect(error.failures.keys).to eq(%w[mem queue])
       expect(error.failures.values).to all(be_a(IOError))
     end
     expect(http.closed?).to be(true)

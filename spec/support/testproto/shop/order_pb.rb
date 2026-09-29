@@ -4,8 +4,11 @@
 
 require 'google/protobuf'
 
+require 'mesh/options_pb'
+require 'google/protobuf/empty_pb'
 
-descriptor_data = "\n\x10shop/order.proto\x12\x04shop\";\n\x05Order\x12\x0f\n\x02id\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x11\n\x04item\x18\x02 \x01(\tH\x01\x88\x01\x01\x42\x05\n\x03_idB\x07\n\x05_itemb\x06proto3"
+
+descriptor_data = "\n\x10shop/order.proto\x12\x04shop\x1a\x12mesh/options.proto\x1a\x1bgoogle/protobuf/empty.proto\";\n\x05Order\x12\x0f\n\x02id\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x11\n\x04item\x18\x02 \x01(\tH\x01\x88\x01\x01\x42\x05\n\x03_idB\x07\n\x05_item2o\n\x0cOrderService\x12!\n\x05Place\x12\x0b.shop.Order\x1a\x0b.shop.Order\x12<\n\x06Placed\x12\x0b.shop.Order\x1a\x16.google.protobuf.Empty\"\r\x88\xb5\x18\x01\x92\xb5\x18\x05\x61uditb\x06proto3"
 
 pool = ::Google::Protobuf::DescriptorPool.generated_pool
 pool.add_serialized_file(descriptor_data)
