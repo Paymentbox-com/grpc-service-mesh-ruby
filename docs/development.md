@@ -56,8 +56,8 @@ a new specification tag only adds options or enum values. To adopt one:
 2. Run `just proto`.
 3. Review the diff under `lib/mesh/`.
 4. Run `just check`.
-5. Bump the version in `lib/grpc_service_mesh/version.rb`, commit, and run
-   `just tag`.
+5. Run `just bump patch`, `just bump minor`, or `just bump major`, commit, and
+   release as described in [publishing.md](../publishing.md).
 
 The extension numbers in `mesh/options.proto` are part of every definitions
 project's compiled descriptors, and the specification never changes or
@@ -88,6 +88,7 @@ recipes.
 | `just tag` | Tags the current commit with the gem's version and pushes the tag. |
 | `just publish` | Pushes the built gem to rubygems.org. |
 | `just release` | Runs `tag`, `build`, and `publish`. |
+| `just bump patch`, `just bump minor`, `just bump major` | Raises the version in `lib/grpc_service_mesh/version.rb` by one step. A minor bump resets the patch number, and a major bump resets both. |
 
 Publishing is described in [publishing.md](../publishing.md).
 
