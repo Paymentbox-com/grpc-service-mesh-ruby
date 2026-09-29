@@ -22,13 +22,9 @@ repository and lives in a definitions project.
 
 ## Install
 
-The gem and its `service_mesh` dependency are installed from their
-repositories at a tag, so the Gemfile names both git sources.
-
 ```ruby
 # Gemfile
-gem "grpc_service_mesh", git: "https://github.com/Paymentbox-com/grpc-service-mesh-ruby", tag: "v0.16.1"
-gem "service_mesh", git: "https://github.com/Paymentbox-com/service-mesh-ruby", tag: "v0.4.3"
+gem "grpc_service_mesh"
 ```
 
 Requires Ruby 3.3 or newer. The gem depends on `service_mesh`,

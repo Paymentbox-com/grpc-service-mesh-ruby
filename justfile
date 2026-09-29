@@ -65,7 +65,7 @@ proto-spec:
     {{protoc}} --proto_path="$spec" --ruby_out=lib "$spec/mesh/options.proto"
 
 # The grpc-service-mesh-gen version the reference output in spec/support/testproto is generated with
-gen_version := "v0.8.1"
+gen_version := "v0.8.2"
 
 # Regenerate spec/support/testproto from spec/support/definitions with grpc-service-mesh-gen at {{gen_version}}
 [group('build')]
