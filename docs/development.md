@@ -1,5 +1,9 @@
 # Development
 
+This page is for working on the library itself. It covers the compiled
+specification protos the library ships, how to update them, and the recipes
+and tests used during development.
+
 ## Specification Protos
 
 `lib/mesh/options_pb.rb` is protoc's Ruby output of the specification's
@@ -13,10 +17,13 @@ tag named by `spec_tag` in the `justfile`.
 The compiled forms of `google/rpc/*.proto` are the published ones in
 `googleapis-common-protos-types`.
 
-Every `*_pb.rb` file protoc writes from a definitions file that imports
-`mesh/options.proto` calls `require 'mesh/options_pb'`, so a definitions
-project's Gemfile requires this gem. Plain `protoc` takes the specification's
-files from the directory `grpc-service-mesh-gen proto-path` prints:
+A definitions file that uses the mesh options imports `mesh/options.proto`.
+The `*_pb.rb` file that protoc writes from it then calls
+`require 'mesh/options_pb'`, so a definitions project's Gemfile requires this
+gem.
+
+A project that runs plain `protoc` itself takes the specification's files from
+the directory that `grpc-service-mesh-gen proto-path` prints:
 
 ```sh
 protoc \
@@ -28,16 +35,16 @@ protoc \
 
 Only files under `definitions/` are listed. The specification's files are
 only on the include path. A project that runs this command itself runs the
-generator with `--mesh-only`, which writes the mesh code and skips the
-message runs.
+generator with `--mesh-only`, which writes the mesh code and skips compiling
+the message types.
 
 ### Updating the Compiled Specification Protos
 
 `lib/mesh/options_pb.rb` is the compiled form of `mesh/options.proto` in the
 specification repository,
 [grpc-service-mesh-api](https://github.com/Paymentbox-com/grpc-service-mesh-api),
-at the tag `spec_tag` names in the `justfile`. It is never edited here.
-`just proto-spec` makes a shallow clone of that tag in a temporary directory,
+at the tag `spec_tag` names in the `justfile`. It is never edited here. `just
+proto-spec` makes a shallow clone of that tag in a temporary directory,
 compiles `mesh/options.proto` from it with `protoc`, and removes the clone. CI
 runs `just proto` and fails when the result differs from what is committed, so
 the compiled form always matches the stated tag.
@@ -64,7 +71,8 @@ just install
 just check      # lint, test, build
 ```
 
-Tool versions are pinned in `mise.toml`. `just` with no arguments lists the recipes.
+Tool versions are pinned in `mise.toml`. `just` with no arguments lists the
+recipes.
 
 | Recipe | What it does |
 |---|---|
@@ -73,7 +81,7 @@ Tool versions are pinned in `mise.toml`. `just` with no arguments lists the reci
 | `just build` | Builds the gem into `pkg/grpc_service_mesh-<version>.gem`. |
 | `just proto` | Runs `just proto-spec` and `just proto-test`. |
 | `just proto-spec` | Compiles `mesh/options.proto` from grpc-service-mesh-api at `spec_tag` into `lib/mesh/options_pb.rb`. |
-| `just proto-test` | Regenerates `spec/support/testproto/shop/order_pb.rb` with `protoc`. |
+| `just proto-test` | Regenerates `spec/support/testproto/` from `spec/support/definitions/` with `grpc-service-mesh-gen` at `gen_version`. |
 | `just lint` | Reports lint findings with RuboCop. |
 | `just fmt` | Fixes lint findings in place with RuboCop. |
 | `just check` | Runs `lint`, `test`, and `build`, in the order CI runs them. |
@@ -89,10 +97,14 @@ the client's in-memory bus and closes the client on stop. It raises
 `ServiceMesh::KindMismatch` when a target of the wrong kind is used, so nothing
 in this repository needs a broker.
 
-`spec/support/testproto/` holds the `shop.Order` message, its protoc output,
-and the reference generated files shown under
-[Generated Code](generated-code.md). `just proto-test` regenerates the message
-code.
+`spec/support/testproto/` holds the reference output shown under
+[Generated Code](generated-code.md), generated from the definitions in
+`spec/support/definitions/`. `just proto-test` deletes the generated files and
+runs `grpc-service-mesh-gen` at `gen_version` to write them again. CI runs
+`just proto` and fails when the result differs from what is committed.
+Adopting a new generator version means setting `gen_version`, running
+`just proto`, and reviewing the diff. Go is pinned in `mise.toml` because the
+generator is a Go program.
 
 `spec/mesh_options_spec.rb` checks that the five extensions are in the
 descriptor pool by their full names.

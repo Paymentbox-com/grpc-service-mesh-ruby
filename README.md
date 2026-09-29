@@ -46,11 +46,11 @@ generated from `.proto` files.
 
 ### Reference Examples
 
-The examples in these docs use the `shop.OrderService` from the specification: a `ROUTE` method `Place` and a
-`TOPIC` method `Placed`, served over the transport named `nats` in deployment group `shop`. The generated module is
-`Shop`, with `Shop::OrderService`, `Shop::OrderClient`, and `Shop::OrderTargets`, and the generated per-transport maps
-are in `ServiceMaps`. The library's own reference copy of that generated code is in `spec/support/testproto/`,
-described under [Generated Code](docs/generated-code.md).
+The examples in these docs use the reference definitions in `spec/support/definitions/`. They declare
+`shop.OrderService`, with a `ROUTE` method `Place` and a `TOPIC` method `Placed`, in deployment group `shop` over the
+transport named `mem`, the in-memory transport the specs use. The generated module is `Shop`, and the generated
+per-transport maps are in `ServiceMaps`. The generated code is in `spec/support/testproto/`, written by
+`grpc-service-mesh-gen` as a consumer would generate it, and described under [Generated Code](docs/generated-code.md).
 
 ## Documentation
 
@@ -58,6 +58,6 @@ described under [Generated Code](docs/generated-code.md).
 - [Handlers](docs/handlers.md): implementing an `RPCService`, endpoint and subscriber handlers, returning errors, reply metadata, and message metadata
 - [Calling](docs/calling.md): calling generated clients, metadata and transport options, reply metadata, and the wire format
 - [MeshError](docs/mesherror.md): constructing and reading `MeshError`, and the errors the library raises
-- [Generated Code](docs/generated-code.md): what the generator emits for Ruby, with the reference files and the DSL
+- [Generated Code](docs/generated-code.md): the generated reference output for Ruby, and what generated code relies on in this library
 - [Public API](docs/public-api.md): every public constant and method in `GrpcServiceMesh`
 - [Development](docs/development.md): the specification protos, the recipes, and the tests
