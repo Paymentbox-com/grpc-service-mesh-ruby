@@ -184,7 +184,17 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(status_of(reply).message).to eq("place returned Google::Rpc::Status, expected Shop::Order")
     end
 
-    it "reports a request that does not decode as UNKNOWN without calling the handler" do
+    it "reports a ParseError the handler itself raises as UNKNOWN" do
+      service = Class.new(Shop::OrderService) do
+        def place(_request) = Shop::Order.decode("\x80".b)
+      end.new
+
+      reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, Shop::Order.new.to_proto))
+
+      expect(status_of(reply).code).to eq(2)
+    end
+
+    it "reports a request that does not decode as INTERNAL without calling the handler" do
       called = false
       service = Class.new(Shop::OrderService) do
         define_method(:place) { |request| called = true and request }
@@ -193,8 +203,9 @@ RSpec.describe GrpcServiceMesh::RPCService do
       reply = service.endpoints.first.handler.call(inbound(Shop::OrderTargets::PLACE, "\x80".b))
 
       expect(called).to be(false)
-      expect(reply.metadata["Grpc-Status"]).to eq("2")
-      expect(status_of(reply).code).to eq(2)
+      expect(reply.metadata["Grpc-Status"]).to eq("13")
+      expect(status_of(reply).code).to eq(13)
+      expect(status_of(reply).message).to start_with("request does not decode as shop.Order: ")
     end
   end
 
@@ -219,6 +230,17 @@ RSpec.describe GrpcServiceMesh::RPCService do
 
       expect { service.subscribers.first.handler.call(inbound(Shop::OrderTargets::PLACED, Shop::Order.new.to_proto)) }
         .to raise_error(IOError, "audit log closed")
+    end
+
+    it "raises a decode error naming the message type without calling the handler" do
+      called = false
+      service = Class.new(Shop::OrderService) do
+        define_method(:placed) { |_request| called = true }
+      end.new
+
+      expect { service.subscribers.first.handler.call(inbound(Shop::OrderTargets::PLACED, "\x80".b)) }
+        .to raise_error(Google::Protobuf::ParseError, /\Arequest does not decode as shop\.Order: /)
+      expect(called).to be(false)
     end
   end
 end

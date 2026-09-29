@@ -25,9 +25,17 @@ module GrpcServiceMesh
       @clients.fetch(name) { raise UnknownTransport.new(name) }
     end
 
-    # Closes every client.
+    # Closes every client, even when some fail to close. Returns nil, or
+    # raises CloseFailed carrying each client's exception by transport name.
     def close
-      @clients.each_value(&:close)
+      failures = {}
+      @clients.each do |name, client|
+        client.close
+      rescue => e
+        failures[name] = e
+      end
+      raise CloseFailed.new(failures) unless failures.empty?
+
       nil
     end
   end

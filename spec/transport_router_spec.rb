@@ -44,4 +44,18 @@ RSpec.describe GrpcServiceMesh::TransportRouter do
     expect(nats.closed?).to be(true)
     expect(http.closed?).to be(true)
   end
+
+  it "closes every client when some fail and raises CloseFailed with each failure by name" do
+    failing = Class.new { def close = raise(IOError, "flush failed") }
+    http = memory_client
+    GrpcServiceMesh.add_transport("nats", failing.new)
+    GrpcServiceMesh.add_transport("http", http)
+    GrpcServiceMesh.add_transport("queue", failing.new)
+
+    expect { router.close }.to raise_error(GrpcServiceMesh::CloseFailed, "nats: flush failed; queue: flush failed") do |error|
+      expect(error.failures.keys).to eq(%w[nats queue])
+      expect(error.failures.values).to all(be_a(IOError))
+    end
+    expect(http.closed?).to be(true)
+  end
 end

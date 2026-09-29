@@ -31,7 +31,13 @@ module GrpcServiceMesh
 
     def endpoint_handler(rpc)
       lambda do |message|
-        response = public_send(rpc.name, decode_inbound(rpc, message))
+        request = begin
+          decode_inbound(rpc, message)
+        rescue Google::Protobuf::ParseError => e
+          next status_reply(message, MeshError.new(:INTERNAL, e.message))
+        end
+
+        response = public_send(rpc.name, request)
         unless response.is_a?(rpc.output)
           raise TypeError, "#{rpc.name} returned #{response.class}, expected #{rpc.output}"
         end
@@ -52,9 +58,15 @@ module GrpcServiceMesh
       end
     end
 
-    # The decoded payload carrying the message's metadata.
+    # The decoded payload carrying the message's metadata. A payload that
+    # does not decode raises Google::Protobuf::ParseError naming the input
+    # type.
     def decode_inbound(rpc, message)
-      request = rpc.input.decode(message.payload)
+      request = begin
+        rpc.input.decode(message.payload)
+      rescue Google::Protobuf::ParseError => e
+        raise Google::Protobuf::ParseError, "request does not decode as #{rpc.input.descriptor.name}: #{e.message}"
+      end
       request.mesh_metadata = message.metadata
       request
     end
