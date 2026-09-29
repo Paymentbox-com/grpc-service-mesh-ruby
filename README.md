@@ -55,7 +55,7 @@ described under [Generated Code](docs/generated-code.md).
 ## Documentation
 
 - [Setup](docs/setup.md): configuring the `TransportRouter`, registering services, and running an `RPCRuntime`
-- [Handlers](docs/handlers.md): message metadata, writing route and topic handlers, returning errors, and setting reply metadata
+- [Handlers](docs/handlers.md): implementing an `RPCService`, endpoint and subscriber handlers, returning errors, reply metadata, and message metadata
 - [Calling](docs/calling.md): calling generated clients, metadata and transport options, reply metadata, and the wire format
 - [MeshError](docs/mesherror.md): constructing and reading `MeshError`, and the errors the library raises
 - [Generated Code](docs/generated-code.md): what the generator emits for Ruby, with the reference files and the DSL

@@ -1,32 +1,66 @@
 # Handlers
 
-## Message Metadata
+A handler is the application code that serves one rpc method. The generator
+writes an `RPCService` subclass for each proto service, and that class declares
+the service's rpcs but serves none of them. The application implements its
+handlers by subclassing the generated class and defining one method per rpc it
+serves. It then registers an instance of the subclass, as described under
+[Registering a Service](setup.md#registering-a-service).
 
-Message metadata travels on the message objects themselves. The generated
-code includes the `GrpcServiceMesh::Metadata` module into every message class
-that an rpc takes or returns. The module adds two methods.
+The library turns each method into a Service Mesh API `Endpoint`, for a route
+rpc, or `Subscriber`, for a topic rpc. Each one decodes the inbound payload,
+calls the method, and for a route rpc encodes the reply. The sections below
+describe what a handler method receives, what it returns, and how its failures
+reach the caller.
 
-| Method | Behavior |
-|---|---|
-| `#mesh_metadata` | Returns the object's metadata Hash. The first read on an object with no metadata stores a new empty Hash on it, so keys can be written into it directly. A frozen object with no metadata returns a frozen empty Hash. |
-| `#mesh_metadata=(hash)` | Sets the metadata. `nil` clears it, and a value that is not a Hash raises `TypeError`. |
+## Implementing an RPCService
 
-The library sets `mesh_metadata` on the objects it builds. These are the
-decoded request a handler receives, and the decoded response or `MeshError` a
-caller receives.
+The generated `Shop::OrderService` declares the route rpc `place` and the topic
+rpc `placed`, with the message class each one takes and returns:
 
-The library only reads `mesh_metadata` on the objects the application gives
-it, which are the request a caller sends and the response a handler returns.
-It never writes to them, so a handler may return a shared or frozen object.
+```ruby
+class OrderService < GrpcServiceMesh::RPCService
+  rpc :place, target: OrderTargets::PLACE, input: Shop::Order, output: Shop::Order, kind: :route
+  rpc :placed, target: OrderTargets::PLACED, input: Shop::Order, kind: :topic
+end
+```
 
-`MeshError` includes the module as well. A message class that declares its own
-field named `mesh_metadata` can't carry metadata, so the generator rejects it.
+The application subclasses it and defines a method named after each rpc. Each
+method takes one argument, the decoded request. The subclass is an ordinary
+Ruby class, so it can take its dependencies through `initialize` and keep them
+on the instance.
+
+```ruby
+class Orders < Shop::OrderService
+  def initialize(store, audit)
+    @store = store
+    @audit = audit
+  end
+
+  # route: returns a Shop::Order
+  def place(request)
+    Shop::Order.new(id: @store.place(request.item), item: request.item)
+  end
+
+  # topic: the return value is ignored
+  def placed(event)
+    @audit.record(event)
+  end
+end
+
+GrpcServiceMesh.register(Orders.new(store, audit))
+```
+
+An instance serves every rpc whose method is defined by its class, or by a
+superclass below the generated class. An rpc without a method is not served,
+so a process can implement only some of a service's rpcs.
 
 ## Endpoint Handlers
 
-A route handler receives the decoded request and returns the response, or
-raises. A `MeshError` is the application failure the caller receives. Inbound
-message metadata is read from the request's `mesh_metadata`.
+A route handler receives the decoded request and returns the response, which
+must be an instance of the rpc's output class. The inbound message metadata is
+on the request, as its `mesh_metadata`, described under
+[Message Metadata](#message-metadata).
 
 ```ruby
 def place(request)
@@ -64,14 +98,14 @@ rpc's output class, is reported the same way as `UNKNOWN` (2), with the
 failure's message.
 
 A request that does not decode is reported as `INTERNAL` (13), the code every
-decoding failure carries. The message names the message type, such as
-`request does not decode as shop.Order: ...`.
+decoding failure carries, and the method is not called. The message names the
+message type, such as `request does not decode as shop.Order: ...`.
 
 In the Service Mesh API, an endpoint handler returns a reply message or raises,
 and a transport reports a raised error to the caller in its own way. The
-handler that `RPCService` builds always returns a reply message for any
-`StandardError`, even for a failure. A caller therefore receives every handler
-failure as a `MeshError`, and never as the transport's own handler error.
+endpoint that `RPCService` builds always returns a reply message, even for a
+failure. A caller therefore receives every handler failure as a `MeshError`,
+and never as the transport's own handler error.
 
 ## Reply Metadata
 
@@ -79,11 +113,12 @@ A route handler sets metadata on its reply through the `mesh_metadata` of the
 response it returns. When it raises a `MeshError`, the reply's metadata is the
 error's `mesh_metadata`, which the error takes on construction as
 `mesh_metadata:` or through `mesh_metadata=`. The `UNKNOWN` reply for any other
-failure carries only the library's keys. The library writes `Content-Type` and
-`Grpc-Status` over the application's values, so its own values win, and a
-successful reply carries no `Grpc-Status`. Keys that start with `Mesh-Option-`
-are removed from the reply's metadata. A topic handler has no reply, so
-metadata it sets goes nowhere.
+failure carries only the library's keys.
+
+The library writes `Content-Type` and `Grpc-Status` over the application's
+values, so its own values win, and a successful reply carries no
+`Grpc-Status`. Keys that start with `Mesh-Option-` are removed from the reply's
+metadata.
 
 ```ruby
 def place(request)
@@ -99,11 +134,34 @@ end
 ## Subscriber Handlers
 
 A topic handler receives the decoded message, and its return value is ignored.
+A topic message has no reply, so metadata the handler sets goes nowhere.
 
-A topic message has no reply, so the handler that `RPCService` builds lets an
-exception from the handler propagate to the transport unchanged. The transport
-documents what it does with it.
+The subscriber that `RPCService` builds lets an exception from the handler
+propagate to the transport unchanged. The transport documents what it does
+with it.
 
-A message that does not decode is handled the same way. The handler is not
+A message that does not decode is handled the same way. The method is not
 called, and the transport receives a `Google::Protobuf::ParseError` that names
 the message type, such as `request does not decode as shop.Order: ...`.
+
+## Message Metadata
+
+Message metadata travels on the message objects themselves. The generated
+code includes the `GrpcServiceMesh::Metadata` module into every message class
+that an rpc takes or returns. The module adds two methods.
+
+| Method | Behavior |
+|---|---|
+| `#mesh_metadata` | Returns the object's metadata Hash. The first read on an object with no metadata stores a new empty Hash on it, so keys can be written into it directly. A frozen object with no metadata returns a frozen empty Hash. |
+| `#mesh_metadata=(hash)` | Sets the metadata. `nil` clears it, and a value that is not a Hash raises `TypeError`. |
+
+The library sets `mesh_metadata` on the objects it builds. These are the
+decoded request a handler receives, and the decoded response or `MeshError` a
+caller receives.
+
+The library only reads `mesh_metadata` on the objects the application gives
+it, which are the request a caller sends and the response a handler returns.
+It never writes to them, so a handler may return a shared or frozen object.
+
+`MeshError` includes the module as well. A message class that declares its own
+field named `mesh_metadata` can't carry metadata, so the generator rejects it.
