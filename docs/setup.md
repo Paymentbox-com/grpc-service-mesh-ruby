@@ -60,14 +60,45 @@ The registry keeps every endpoint and subscriber registered with it. If two
 registered services serve the same `Target`, the transport is given two
 endpoints or subscribers for it.
 
+### Setting a Consumer Group
+
+`register` takes `consumer_groups:`, which sets the consumer group of the
+service's endpoints and subscribers, by target:
+
+```ruby
+GrpcServiceMesh.register(Orders.new(db_model, logger),
+  consumer_groups: {Shop::OrderTargets::PLACED => "billing-ledger"})
+```
+
+A consumer group decides which instances share each message: only one instance
+in a group handles a given message, and every group receives it. It is resolved
+in this order:
+
+1. The value `consumer_groups:` gives when the service is registered.
+2. The `consumer_group` option on the method in the definitions, which the
+   generated code carries.
+3. The deployment group of the runtime that serves it.
+
+A value of `""` removes the generated value, so the runtime's deployment group
+applies, and `ServiceMesh::CONSUMER_GROUP_NONE` means no group, so every
+instance handles every message.
+
+`register` raises `ArgumentError` when `consumer_groups:` names a target that is
+not one of the service's rpc methods. Registering happens at boot, so the
+mistake stops the process before it serves anything, and nothing of that service
+is registered.
+
 ## Constructing and Starting an RPCRuntime
 
 `RPCRuntime.new(transport:, deployment_group:, runtime:, config: {})` builds
 the runtime for one transport and one deployment group.
 
-It takes the transport's `Client` from `transport_router`. It takes the
-`Endpoints` and `Subscribers` whose `Targets` carry `deployment_group` from
-`registry`. It copies `config:` and sets `"deployment_group"` in the copy to
+It takes the transport's `Client` from `transport_router`. It takes every
+`Endpoint` and `Subscriber` in `registry` whose target's `transport` is the
+runtime's, and leaves the rest for the runtime of their own transport. The
+deployment group is the runtime's own configuration, and nothing in the
+definitions or the registry narrows which endpoints and subscribers it serves.
+It copies `config:` and sets `"deployment_group"` in the copy to
 `deployment_group:`, overwriting any value `config:` has, and leaves the given
 Hash unchanged. It then calls `runtime:` with the client, the copied
 configuration, and the endpoints and subscribers, so the transport's runtime is
@@ -92,21 +123,17 @@ runtime.stop(10)
 ```
 
 `RPCRuntime.new` raises a library error when `runtime:` does not respond to
-`call`, when the transport was not added to the router, or when a given
-`Target` is outside the runtime. These are listed under
-[Library Errors](mesherror.md#library-errors). Whatever `runtime:` raises passes
-through unchanged.
+`call`, or when the transport was not added to the router. These are listed
+under [Library Errors](mesherror.md#library-errors). Whatever `runtime:` raises
+passes through unchanged.
 
-`endpoints:` and `subscribers:` give the runtime a list to serve in place of
-the registry's list of that kind, so a process can serve only part of a
-deployment group. `nil`, the default, takes the list from the registry, and
-`[]` serves none of that kind. Every `Target` in a given list must carry the
-runtime's `deployment_group` and `transport`.
-
-```ruby
-GrpcServiceMesh::RPCRuntime.new(transport: "mem", deployment_group: "shop", runtime: build_runtime,
-  endpoints: Orders.new(db_model, logger).endpoints)
-```
+A process has one registry, and one `RPCRuntime` for each transport it serves,
+all under the process's deployment group. It registers everything it serves at
+boot, whatever the transport. A registered service whose transport has no
+runtime in the process is not served, and a process serves part of a service by
+registering only what it serves. Each `ROUTE` service is served by one
+deployment group, because two groups serving one `ROUTE` method would both
+reply.
 
 `start`, `stop(drain)`, `running?`, and `client` delegate to the underlying
 transport runtime, which `t_runtime` returns.

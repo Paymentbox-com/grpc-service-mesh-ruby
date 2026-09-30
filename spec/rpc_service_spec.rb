@@ -9,15 +9,15 @@ RSpec.describe GrpcServiceMesh::RPCService do
     Google::Rpc::Status.decode(reply.payload)
   end
 
-  describe "binding" do
-    it "binds nothing on the generated class itself" do
+  describe "endpoints and subscribers" do
+    it "serves nothing on the generated class itself" do
       service = Shop::OrderService.new
 
       expect(service.endpoints).to eq([])
       expect(service.subscribers).to eq([])
     end
 
-    it "binds only the route a subclass defines" do
+    it "serves only the route a subclass defines" do
       service = Class.new(Shop::OrderService) do
         def place(request) = request
       end.new
@@ -26,7 +26,7 @@ RSpec.describe GrpcServiceMesh::RPCService do
       expect(service.subscribers).to eq([])
     end
 
-    it "binds only the topic a subclass defines" do
+    it "serves only the topic a subclass defines" do
       service = Class.new(Shop::OrderService) do
         def placed(request)
         end
@@ -34,6 +34,18 @@ RSpec.describe GrpcServiceMesh::RPCService do
 
       expect(service.endpoints).to eq([])
       expect(service.subscribers.map(&:target)).to eq([Shop::OrderTargets::PLACED])
+    end
+
+    it "puts the rpc's consumer group in the metadata, and none when it has none" do
+      service = Class.new(Shop::OrderService) do
+        def place(request) = request
+
+        def placed(request)
+        end
+      end.new
+
+      expect(service.subscribers.first.metadata).to eq({"consumer_group" => "audit"})
+      expect(service.endpoints.first.metadata).to eq({})
     end
   end
 

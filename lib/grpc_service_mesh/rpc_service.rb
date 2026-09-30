@@ -10,17 +10,27 @@ module GrpcServiceMesh
   class RPCService
     extend RpcDSL
 
-    # A ServiceMesh::Endpoint for each route rpc this instance implements.
+    # A ServiceMesh::Endpoint for each route rpc this instance implements,
+    # with the rpc's consumer_group in its metadata when it has one.
     def endpoints
-      implemented.select(&:route?).map { |rpc| ServiceMesh::Endpoint.new(target: rpc.target, handler: endpoint_handler(rpc)) }
+      implemented.select(&:route?).map do |rpc|
+        ServiceMesh::Endpoint.new(target: rpc.target, handler: endpoint_handler(rpc), metadata: consumer_group_metadata(rpc))
+      end
     end
 
-    # A ServiceMesh::Subscriber for each topic rpc this instance implements.
+    # A ServiceMesh::Subscriber for each topic rpc this instance implements,
+    # with the rpc's consumer_group in its metadata when it has one.
     def subscribers
-      implemented.reject(&:route?).map { |rpc| ServiceMesh::Subscriber.new(target: rpc.target, handler: subscriber_handler(rpc)) }
+      implemented.reject(&:route?).map do |rpc|
+        ServiceMesh::Subscriber.new(target: rpc.target, handler: subscriber_handler(rpc), metadata: consumer_group_metadata(rpc))
+      end
     end
 
     private
+
+    def consumer_group_metadata(rpc)
+      rpc.consumer_group.nil? ? {} : {ServiceMesh::CONSUMER_GROUP_KEY => rpc.consumer_group}
+    end
 
     # Rpcs whose method is defined in the declaring class or below it.
     def implemented

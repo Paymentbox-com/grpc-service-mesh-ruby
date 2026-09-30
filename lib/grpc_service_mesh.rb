@@ -35,8 +35,8 @@ module GrpcServiceMesh
     end
 
     # Shortcut for registry.register.
-    def register(service)
-      registry.register(service)
+    def register(service, consumer_groups: {})
+      registry.register(service, consumer_groups: consumer_groups)
     end
   end
 end

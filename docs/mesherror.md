@@ -65,7 +65,7 @@ raises reaches the caller as described under
 | `GrpcServiceMesh::UnknownTransport` | `transport_router.client`, `RPCRuntime.new`, or a client method looks up a transport name that was not added to the router. The message names the transport. |
 | `GrpcServiceMesh::CloseFailed` | `transport_router.close` could not close one or more clients. `failures` maps each transport name to the exception its client raised, and the message lists each one. |
 | `ArgumentError` | `RPCRuntime.new` is given a `runtime:` that does not respond to `call`. |
-| `ArgumentError` | A `Target` given through `endpoints:` or `subscribers:` carries a different `deployment_group` or `transport` from the runtime. The message names the Target's segments and the key that differs. |
+| `ArgumentError` | `register` is given a `consumer_groups:` target that is not one of the service's rpc methods. The message names the target's segments. It happens at boot, and nothing of that service is registered. |
 | `ArgumentError` | `MeshError.new` is given no code, or a code that is not a `Google::Rpc::Code` name or number. |
 | `TypeError` | A client method is given a request that is not an instance of the rpc method's input class. |
 | `TypeError` | `mesh_metadata=` is given a value that is not a Hash, or a `MeshError` detail is not a protobuf message. |
