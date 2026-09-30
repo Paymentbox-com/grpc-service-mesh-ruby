@@ -47,7 +47,7 @@ tag:
 release: tag build publish
 
 # The grpc-service-mesh-api tag whose mesh/options.proto lib/mesh/options_pb.rb is compiled from
-spec_tag := "v0.6.0"
+spec_tag := "v0.9.0"
 
 # Regenerate lib/mesh/options_pb.rb from the specification at {{spec_tag}}
 # and regenerate the specs' message classes
@@ -65,7 +65,7 @@ proto-spec:
     {{protoc}} --proto_path="$spec" --ruby_out=lib "$spec/mesh/options.proto"
 
 # The grpc-service-mesh-gen version the reference output in spec/support/testproto is generated with
-gen_version := "v0.8.3-0.20260930203044-2f808b9471f4"
+gen_version := "v0.9.0"
 
 # Regenerate spec/support/testproto from spec/support/definitions with grpc-service-mesh-gen at {{gen_version}}
 [group('build')]

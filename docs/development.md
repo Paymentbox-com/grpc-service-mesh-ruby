@@ -8,8 +8,7 @@ and tests used during development.
 
 `lib/mesh/options_pb.rb` is protoc's Ruby output of the specification's
 `mesh/options.proto`. Loading it adds the file to the generated descriptor
-pool, which then resolves the extensions `mesh.kind`, `mesh.consumer_group`,
-`mesh.deployment_group`, `mesh.transport`, and `mesh.root_prefix`, and defines
+pool, which then resolves the extensions `mesh.kind`, `mesh.consumer_group`, `mesh.transport`, and `mesh.root_prefix`, and defines
 `Mesh::Kind`. It is compiled from the
 [grpc-service-mesh-api](https://github.com/Paymentbox-com/grpc-service-mesh-api)
 tag named by `spec_tag` in the `justfile`.
@@ -107,7 +106,7 @@ Adopting a new generator version means setting `gen_version`, running
 `just proto`, and reviewing the diff. Go is pinned in `mise.toml` because the
 generator is a Go program.
 
-`spec/mesh_options_spec.rb` checks that the five extensions are in the
+`spec/mesh_options_spec.rb` checks that the four extensions are in the
 descriptor pool by their full names.
 
 `spec/spec_helper.rb` gives every example an empty process router and
